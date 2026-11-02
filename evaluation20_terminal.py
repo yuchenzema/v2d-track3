@@ -105,8 +105,9 @@ def snapshot(out):
     state = read(out/'status.json')
     experimental=read(out/'experimental-training-status.json')
     submission=read(out/'submission-replay-status.json')
-    from kaggle_progress import receipt_scores
+    from kaggle_progress import receipt_scores,latest_comparison
     kaggle=receipt_scores(out.parent/'official_submission_20261102/original20.kaggle-receipt.json')
+    comparison=latest_comparison(out.parent)
     cad = read(out/'source-cad-status.json')
     health = read(out/'health-monitor.json')
     source_active = state.get('status') in {'source_cad_alignment', 'evaluation_frontend'}
@@ -176,6 +177,7 @@ def snapshot(out):
                 recorded_training_steps_by_episode=history,
                 submission_replay=submission,
                 kaggle_scores=kaggle,
+                kaggle_comparison=comparison,
                 blocking_failure=failure, health=health.get('status'),
                 public_status=public.get('status'), quality_gates_unchanged=True)
 
@@ -214,6 +216,7 @@ def render(report):
         f"CAD 已審核 {report['inspected']}/20；來源局部檢查通過 {report['source_locally_passed']}/20；嚴格完成 {report['strict_completion_count']}/20",
         (f"新版官方重評 {len(report.get('submission_replay',{}).get('episodes',{}))}/20；狀態={report.get('submission_replay',{}).get('status')}。" if report.get('submission_replay') else ''),
         ('舊版 Kaggle 已評分 '+str(report['kaggle_scores']['completed'])+'/6：'+', '.join(f"{r['name']}={r['score']:.5f}{r['unit']}" for r in report['kaggle_scores']['metrics'] if r['score'] is not None) if report.get('kaggle_scores') else ''),
+        (f"最新 Kaggle 候選已評分 {report['kaggle_comparison']['completed']}/6：改善 {report['kaggle_comparison']['improved']} 項、持平 {report['kaggle_comparison']['unchanged']} 項、退步 {report['kaggle_comparison']['regressed']} 項；六項全部提升={report['kaggle_comparison']['all_six_strictly_improved']}。" if report.get('kaggle_comparison') else ''),
         (f"Policy learner 已啟動，steps={report['training_steps'] if report['training_steps'] is not None else '初始化／編譯中，等待首筆回報'}，PID={report['learner_pids']}" if report['learner_pids']
          else f"目前沒有 policy 在訓練；此 run 已記錄訓練 steps={report['training_steps'] or 0}。"),
         '已記錄的實驗訓練：'+(', '.join(f"episode {ep}={steps:,} steps" for ep,steps in report.get('recorded_training_steps_by_episode',{}).items()) or '尚無；品質驗收另計。'),
