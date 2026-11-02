@@ -55,6 +55,20 @@ is never counted as a passed episode.
 
 ## Formal submission requirements
 
+To submit the original 20 preserved policies while improvement continues, use:
+
+```bash
+./submit_original20.sh
+```
+
+This waits for the same serial controller to replay the original checkpoints
+with the official evaluator and pack the full roster. It then performs a fresh
+Kaggle dry-run, uploads all six Track 3 metrics, and waits for their scores.
+It does not require the new CAD improvement pipeline to pass strict completion.
+Use `--status` for a read-only progress check or `--poll` to resume score polling.
+An existing receipt is reused without uploading the same file again. Draft
+exports and incomplete replay rosters are never uploaded.
+
 Read `submission_kit_20261102/tracks/track_3/README.md` and
 `submission_kit_20261102/CONTAINER_SUBMISSION.md`.
 
