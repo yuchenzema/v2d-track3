@@ -6,6 +6,29 @@ import numpy as np
 from improvement_common import BASE,save,utc,digest
 
 
+def prepare_physics_exports(root,source_proof_sha):
+    """Omit OBJ colors only: Newton splits each face color into another shape."""
+    import trimesh
+    root=Path(root);assets=root/'reconstruction/mesh_priors';path=root/'research/own-geometry-provenance.json'
+    proof=json.loads(path.read_text())
+    history=root/'research/physics-export-history'/source_proof_sha[:16];history.mkdir(parents=True,exist_ok=True)
+    shutil.copy2(path,history/'source-geometry-provenance.json')
+    for name,row in proof['objects'].items():
+        obj=assets/f'{name}.obj';shutil.copy2(obj,history/obj.name)
+        mesh=trimesh.load(assets/f'{name}.ply',force='mesh',process=False)
+        obj.write_text(trimesh.exchange.obj.export_obj(mesh,include_color=False,include_normals=False,include_texture=False))
+        exported=trimesh.load(obj,force='mesh',process=False,maintain_order=True)
+        assert np.array_equal(exported.faces,mesh.faces),'Physics OBJ face topology changed'
+        assert np.allclose(exported.vertices,mesh.vertices,atol=1e-8,rtol=0),'Physics OBJ coordinates changed'
+        row['physics_obj_export']=dict(original_colored_obj_sha256=row['mesh_sha256']['obj'],
+            vertex_colors_omitted=True,vertices_and_faces_verified_unchanged=True,
+            maximum_coordinate_roundtrip_error_m=float(np.max(np.abs(exported.vertices-mesh.vertices))))
+        row['mesh_sha256']['obj']=digest(obj)
+    proof.update(physics_obj_export_version=1,source_geometry_provenance_sha256=source_proof_sha,
+        physics_exporter_sha256=digest(Path(__file__)),physics_export_changes_geometry=False)
+    save(path,proof)
+
+
 def install_source(root,source):
     from own_geometry import validate
     root,source=Path(root),Path(source)
@@ -21,9 +44,19 @@ def install_source(root,source):
         src=source/'reconstruction'/name;dst=root/'reconstruction'/name
         if src.is_file() and not dst.exists():shutil.copy2(src,dst)
     assets=root/'reconstruction/mesh_priors';assets.mkdir(exist_ok=True)
-    for path in (source/'reconstruction/mesh_priors').iterdir():
-        if path.is_file():shutil.copy2(path,assets/path.name)
-    shutil.copy2(source/'research/own-geometry-provenance.json',root/'research/own-geometry-provenance.json')
+    own_proof=root/'research/own-geometry-provenance.json'
+    existing=json.loads(own_proof.read_text()) if own_proof.exists() else {}
+    source_sha=digest(source/'research/own-geometry-provenance.json')
+    if existing.get('physics_obj_export_version')==1:
+        assert existing['source_geometry_provenance_sha256']==source_sha,'Original reconstructed geometry changed'
+        validate(root)
+    else:
+        if (root/'coherent-input-checksums.json').exists():
+            assert reset_untrained_setup(root,force=True),'Keep trained inputs frozen; use a new run for physics export changes'
+        for path in (source/'reconstruction/mesh_priors').iterdir():
+            if path.is_file():shutil.copy2(path,assets/path.name)
+        shutil.copy2(source/'research/own-geometry-provenance.json',own_proof)
+        prepare_physics_exports(root,source_sha)
     trajectory=source/'reconstruction/scene_motion_physical.npz'
     with np.load(trajectory,allow_pickle=False) as motion:
         assert motion['object_to_world'].shape==(original['frames'],len(original['objects']),4,4)
@@ -69,12 +102,12 @@ def training_script(episode,seed):
     return text
 
 
-def reset_untrained_setup(root):
+def reset_untrained_setup(root,force=False):
     """Only a setup with zero learning/checkpoints may adopt faster physics."""
     root=Path(root);manifest=root/'coherent-input-checksums.json'
     if not manifest.exists():return False
     config=json.loads((root/'coherent-training-config.json').read_text())
-    if config.get('scene',{}).get('decompose_objects') is False and config['scene'].get('world_count')==64:return False
+    if not force and config.get('scene',{}).get('decompose_objects') is False and config['scene'].get('world_count')==64:return False
     folder=root/'flash_chord_coherent_actor_transfer'
     if list(folder.glob('*.safetensors')) or (folder/'TRAINING_COMPLETED').exists():return False
     metrics=folder/'metrics.jsonl'

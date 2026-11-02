@@ -82,3 +82,19 @@ class FastSubmissionTests(unittest.TestCase):
             (root/'coherent-training-config.json').write_text(json.dumps(dict(scene=dict(decompose_objects=True))))
             (root/'flash_chord_coherent_actor_transfer/policy_0.safetensors').write_bytes(b'own policy')
             self.assertFalse(reset_untrained_setup(root))
+
+    def test_physics_color_omission_preserves_geometry_and_submission_mesh(self):
+        import trimesh
+        from fast_policy_execution import prepare_physics_exports
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);assets=root/'reconstruction/mesh_priors';assets.mkdir(parents=True);(root/'research').mkdir()
+            mesh=trimesh.creation.icosphere(subdivisions=1)
+            mesh.visual.vertex_colors=np.random.default_rng(1).integers(0,255,(len(mesh.vertices),4),dtype=np.uint8)
+            for extension in ['ply','obj','glb']:mesh.export(assets/f'object.{extension}')
+            hashes={extension:digest(assets/f'object.{extension}') for extension in ['ply','obj','glb']}
+            path=root/'research/own-geometry-provenance.json';path.write_text(json.dumps(dict(objects=dict(object=dict(mesh_sha256=hashes)))))
+            source_sha=digest(path);prepare_physics_exports(root,source_sha)
+            proof=json.loads(path.read_text());self.assertFalse(proof['physics_export_changes_geometry'])
+            self.assertEqual(digest(assets/'object.glb'),hashes['glb']);self.assertEqual(digest(assets/'object.ply'),hashes['ply'])
+            vertices=[line for line in (assets/'object.obj').read_text().splitlines() if line.startswith('v ')]
+            self.assertTrue(vertices);self.assertTrue(all(len(line.split())==4 for line in vertices))
