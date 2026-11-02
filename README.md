@@ -25,6 +25,8 @@ strict source alignment, contact or grasp success. These quality checks remain
 diagnostic; they do not count as passed or grant strict completion. Own geometry,
 fresh actors, finite full-source trajectories and submission integrity remain
 required. Public validation stays excluded. The same serial service owns the work.
+Fast training uses the native single convex hull of each reconstructed object for
+contacts, avoiding CoACD startup cost. Concave contact geometry is approximate.
 
 The evaluation roster is:
 `1,3,5,6,8,10,14,15,16,19,20,25,28,30,32,33,35,36,37,38`.
