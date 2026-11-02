@@ -15,7 +15,7 @@ def status(ep,phase,state='running',**extra):
  r=root(ep);entry={'episode':ep,'pid':os.getpid(),'process_script':Path(sys.argv[0]).name,'updated_utc':utc(),'status':state,'phase':phase,'description':phase,'run':str(r),'activity_kind':'complete_reconstruction_and_retraining',**extra};save(r/'research/rebuild-status.json',entry);save(OUT/f'episode_{ep:06d}-status.json',entry)
  save(BATCH/f'improvements_20261021/activities/episode_{ep:06d}-full-rebuild-20261023.json',entry)
  phase_status=json.loads((OUT/'phase-status.json').read_text()) if (OUT/'phase-status.json').exists() else {'episodes':{}}
- phase_status['episodes'][str(ep)]=entry;phase_status.update(updated_utc=utc(),worker_pid=os.getpid(),requested_episodes=EPISODES);save(OUT/'phase-status.json',phase_status)
+ phase_status.setdefault('episodes',{})[str(ep)]=entry;phase_status.update(updated_utc=utc(),worker_pid=os.getpid(),requested_episodes=EPISODES);save(OUT/'phase-status.json',phase_status)
 def command(r,args,label):vision.run([str(x) for x in args],r/f'logs/{label}.log')
 def prepare(ep):
  r=root(ep);source=BASE/f'runs/episode_{ep:06d}_newton_batch_20261015'
