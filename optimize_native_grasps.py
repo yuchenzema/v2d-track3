@@ -88,8 +88,28 @@ def inspect(env,*args,**kwargs):
    solution=min(choices,key=clearance_merit);update(solution.x);_,after=collisions()
   if after>(max(before,.0015) if source_sigma else before):
    solution.x=initial.copy();update(solution.x);_,after=collisions()
+  pinch_report=None
+  if cfg.get('validated_video_pipeline') and not frame_mode and active.any():
+   from native_pinch_contacts import NativePinchContacts
+   from grasp_physics_checks import native_body_id
+   object_body=native_body_id(lambda label:mujoco.mj_name2id(m,mujoco.mjtObj.mjOBJ_BODY,label),f"track3_{cfg['objects'][b]}/object")
+   pinch=NativePinchContacts(m,d,handgeoms,object_body,active)
+   pinch_before=pinch.summary();accepted=False
+   if len(pinch.pairs)>=2:
+    original_solution=solution
+    def supported_residual(x):return np.r_[residual(x),pinch.residual()]
+    supported=least_squares(supported_residual,solution.x,bounds=(lo,hi),max_nfev=150,diff_step=1e-4,ftol=1e-7,xtol=1e-7,gtol=1e-7,x_scale=np.r_[np.full(3,.01),np.full(3,.2),np.full(len(finger),.3)])
+    update(supported.x);_,supported_depth=collisions();pinch_after=pinch.summary()
+    accepted=bool(supported_depth<=1e-6 and pinch_after['reference_gravity_cone_feasible'])
+    solution=supported if accepted else original_solution
+    update(solution.x);_,after=collisions()
+   else:pinch_after=pinch_before
+   pinch_report=dict(before=pinch_before,proposal=pinch_after,accepted=accepted,
+                     reference_gravity_cone_feasible=pinch.summary()['reference_gravity_cone_feasible'],
+                     object_pose_modified=False,dynamic_grasp_verified=False)
   newrot=Rotation.from_quat(d.qpos[adr+3:adr+7],scalar_first=True);M=np.eye(4);M[:3,:3]=Rotation.from_quat(OQ[t,b],scalar_first=True).as_matrix();M[:3,3]=O[t,b];W=np.eye(4);W[:3,:3]=newrot.as_matrix();W[:3,3]=d.qpos[adr:adr+3]
   row={'grasp_index':gi,'side':side,'object_index':b,'object':cfg['objects'][b],'held_interval':[g['start'],g['end']],'template_source_frame':t,'wrist_in_object':(np.linalg.inv(M)@W).tolist(),'finger_joints':solution.x[6:].tolist(),'maximum_penetration_m_before':before,'maximum_penetration_m_after':after,'wrist_translation_change_m':float(np.linalg.norm(solution.x[:3])),'wrist_rotation_change_rad':float(np.linalg.norm(solution.x[3:6])),'active_fingertip_errors_m':np.linalg.norm(tip_positions()-target,axis=1)[active].tolist(),'optimizer_evaluations':solution.nfev,'optimizer_success':bool(solution.success)};results.append(row);print(json.dumps({k:v for k,v in row.items() if k not in ['wrist_in_object','finger_joints']}),flush=True)
+  if pinch_report:row['native_pinch_fit']=pinch_report
  output=os.environ.get('V2D_CONTACT_FIT_OUTPUT') or ('research/collision-transition-poses.json' if frame_mode else 'research/collision-aware-grasps.json')
  (R/output).write_text(json.dumps({'method':__doc__,'preserved_object_motion':True,'grasps':results},indent=2));raise SystemExit(0)
 runner.run_training=inspect

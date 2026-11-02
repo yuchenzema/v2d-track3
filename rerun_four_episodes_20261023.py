@@ -79,7 +79,7 @@ def rebuild(ep):
  command(r,[PY,r/'scripts/assess_source_fidelity.py','--output','reference-source-fidelity','--overlay'],'rebuild-reference-fidelity')
  if not (r/'reconstruction/rebuilt_scene.glb').exists():command(r,[PY,BASE/'batch_visuals.py',r],'rebuild-visuals')
  native=make_container(r,ep,'newton');retarget=make_container(r,ep,'retarget')
- for helper in ['native_reference_audit.py','rigid_pose_collision_audit.py','optimize_native_grasps.py','apply_collision_grasps.py','apply_collision_transitions.py','project_native_object_contacts.py','evaluate_reference_controller.py','run_geometry_cpu.py','robot_wrist_calibration.py','training_numeric_failure_guard.py','training_finger_reset.py','validation_stop.py']:
+ for helper in ['native_reference_audit.py','rigid_pose_collision_audit.py','optimize_native_grasps.py','native_pinch_contacts.py','grasp_physics_checks.py','apply_collision_grasps.py','apply_collision_transitions.py','project_native_object_contacts.py','evaluate_reference_controller.py','run_geometry_cpu.py','robot_wrist_calibration.py','training_numeric_failure_guard.py','training_finger_reset.py','validation_stop.py']:
   shutil.copy2(BASE/helper,r/'scripts'/helper)
  for script in ['retarget_hands','coherent_grasp_variant']:
   if not (r/f'research/rebuild-{script}-completed.json').exists():
@@ -114,7 +114,7 @@ def train_and_export(ep):
  from batch_final_audit import audit
  r=root(ep);cfg=json.loads((r/'episode-config.json').read_text());native=cfg['native_container'];script=r/'scripts/train_coherent_actor_transfer.py'
  if cfg.get('require_nonpenetrating_reference_before_training') and not (r/'coherent-input-checksums.json').exists():
-  for helper in ['native_reference_audit.py','rigid_pose_collision_audit.py','optimize_native_grasps.py']:
+  for helper in ['native_reference_audit.py','rigid_pose_collision_audit.py','optimize_native_grasps.py','native_pinch_contacts.py','grasp_physics_checks.py']:
    shutil.copy2(BASE/helper,r/'scripts'/helper)
   command(r,[PY,BASE/'fit_full_trajectory_contacts_20261023.py','--run',r],'pretraining-nonpenetration-fit')
   cfg=json.loads((r/'episode-config.json').read_text())

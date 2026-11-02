@@ -1,0 +1,49 @@
+Verified Kaggle public scores, 2026-11-02
+
+Metric         Original 20       Combined candidate       Direction
+AUC            0.61371           0.63992                  higher
+SP-SR          0.65000           0.70000                  higher
+MP-SR          0.20000           0.20000                  higher
+RPE (cm)       5.51148           4.26128                  lower
+MPPE (cm)      5.80260           5.48544                  lower
+CD-O (cm)      0.09554           0.09489                  lower
+
+The combined legacy-export candidate uses the complete saved episode 19 policy
+rollout and the two independently tested episode 15/32 spoon meshes. Original
+episode 1 lid retained: its standalone CD-O ablation regressed. All other full
+rollouts and checkpoint/exporter provenance remain as documented by the exporter.
+No post-hoc pose correction, frame stitching or hidden ground truth is used.
+Submission IDs, in metric order above: 57902514, 57902519, 57902520, 57902522,
+57902524, 57902525. Receipt:
+runs/evaluation_batch_20261015/combined_precision_motion_20261102/combined.kaggle-receipt.json
+
+Five metrics improved, one unchanged. This does not fulfill the goal of improving
+all six. MP-SR single-spoon ablations also returned 0.20000 (57902946/57903056).
+Policy-only trial has slightly better MPPE 5.47986; retain its artifacts too.
+These Kaggle scores are separate from disabled public-video identity controls,
+local source-reference proxies, and strict completion of the 20 new pipelines.
+Strict new-pipeline completion remains 0/20.
+
+New source-aligned episode 38 g005 reached 1,280,000 actual environment steps.
+The selected 640,000-step checkpoint still fails the complete physical grasp
+and motion tests. Training completion is not successful episode completion.
+
+Native geometry diagnosis: original CAD and all 68 actual collision hulls leave
+five sampled source-image rays through the handle opening clear. No evidence
+supports the hypothesis that hulls fill this opening. At the reference grasp,
+thumb/object separation is about 7.93 mm: avoiding penetration alone did not
+produce a supporting grasp.
+
+Read-only CPU fitting at source frame 168 reduced thumb separation to 0.685 mm,
+with the other four fitted finger sites at 0.491, 0.506, 0.504 and 0.770 mm.
+Maximum penetration remained zero and bounded contact friction cones can balance
+the simulated gravity wrench at that template pose. Wrist translation changed
+by 4.18 mm. All six frozen g005 input checksums were rechecked unchanged.
+This is geometry feasibility, not proof of stable dynamic grasp or policy
+success. New isolated attempts still require all-frame reference checks,
+unassisted approach tests, learned-policy replay and unchanged strict gates.
+
+New code also prevents completed frozen experiments from being reused after
+scientific input changes. Only a genuinely interrupted current job with matching
+scientific input hashes can resume its own directory. Source-version histories
+and the existing global serial episode lock remain in force.

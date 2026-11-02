@@ -18,7 +18,7 @@ def execution_inputs():
     return {name:digest(BASE/name) for name in ['evaluation_experiment_queue.py','execute_human_match_job_20261023.py',
         'rerun_four_episodes_20261023.py','install_source_cad_reference.py',
         'experimental_training_admission.py','source_cad_training_gate.py',
-        'fit_full_trajectory_contacts_20261023.py','optimize_native_grasps.py',
+        'fit_full_trajectory_contacts_20261023.py','optimize_native_grasps.py','native_pinch_contacts.py',
         'apply_collision_transitions.py','rigid_pose_collision_audit.py',
         'approach_grasp_probe.py','grasp_physics_checks.py',
         'legacy_source_frame_playback.py','fresh_improvement_training.py','grasp_training_admission.py',
@@ -36,6 +36,21 @@ def baseline_source(source):
     raise ValueError('Cyclic experimental baseline provenance')
 
 
+def resumable_request(previous,source_attempt,status,episode,trajectory_sha256):
+    """Resume an interrupted current job, never mutate a finished experiment."""
+    saved=status.get('request')
+    if not saved or status.get('status')!='running':return None
+    finished_requests={entry.get('request') for entry in [previous,source_attempt,
+        *previous.get('source_attempts',{}).values()] if 'exit_code' in entry}
+    if saved in finished_requests:return None
+    prior=read(saved)
+    scientific=lambda hashes:{k:v for k,v in hashes.items() if k!='evaluation_experiment_queue.py'}
+    if (prior.get('episode')==episode and prior.get('source_version')==trajectory_sha256
+            and scientific(status.get('execution_input_hashes',{}))==scientific(execution_inputs())):
+        return Path(saved)
+    return None
+
+
 def candidates(out,focus,policy):
     reports=read(out/'source-cad-status.json').get('results',{})
     registered={}
@@ -44,11 +59,18 @@ def candidates(out,focus,policy):
     history=read(out/'experimental-training-status.json').get('attempts',{})
     result=[]
     for ep in focus:
+        repaired=registered.get(str(ep),{})
+        repaired_parent=(repaired.get('source_candidate_parent_trajectory_sha256')
+            if repaired.get('reference_kind')=='source_revalidated_physical_candidate'
+            and repaired.get('physical_projection_applied') is True and assess(repaired,policy)['admitted'] else None)
         seen=set()
         for report in [reports.get(str(ep),{}),registered.get(str(ep),{})]:
             signature=report.get('trajectory_sha256')
             if not signature or signature in seen:continue
             seen.add(signature)
+            # Use the admitted, rechecked physical derivative of this exact
+            # source. A newer source hash remains an independent candidate.
+            if signature==repaired_parent:continue
             admission=assess(report,policy)
             if not admission['admitted']:continue
             latest=history.get(str(ep),{})
@@ -104,8 +126,7 @@ def run(out,focus):
     request=out/f'jobs/episode_{ep:06d}-experimental-g{generation:03d}.json'
     latest=status.get('attempts',{}).get(str(ep),{})
     source_attempt=latest.get('source_attempts',{}).get(report['trajectory_sha256'],{})
-    saved_request=source_attempt.get('request') or latest.get('request') or status.get('request')
-    prior_request=Path(saved_request) if saved_request else None
+    prior_request=resumable_request(latest,source_attempt,status,ep,report['trajectory_sha256'])
     if prior_request and prior_request.exists():
         prior=read(prior_request)
         if prior.get('episode')==ep and prior.get('source_version')==report['trajectory_sha256']:
@@ -146,6 +167,9 @@ def run(out,focus):
     attempt=dict(trajectory_sha256=report['trajectory_sha256'],request=str(request),
         run=str(run_root),exit_code=child.returncode,finished_utc=utc(),log=str(logpath),
         execution_input_hashes=status['execution_input_hashes'])
+    prior=source_attempts.get(report['trajectory_sha256'],{})
+    if prior:
+        attempt['run_history']=[*prior.get('run_history',[]),{k:v for k,v in prior.items() if k!='run_history'}]
     source_attempts[report['trajectory_sha256']]=dict(attempt)
     status['attempts'][str(ep)]=dict(attempt,source_attempts=source_attempts)
     status.update(status='pilot_finished' if child.returncode==0 else 'pilot_blocked',active_episode=None,updated_utc=utc())
