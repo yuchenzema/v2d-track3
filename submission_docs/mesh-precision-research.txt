@@ -1,0 +1,22 @@
+Mesh precision candidate, 2026-11-02
+
+Purpose: reduce export simplification error relative to the existing reconstructed
+surface. No hidden scan, held-out pose or Kaggle per-episode ground truth is used.
+The historical trajectories, checkpoints, source meshes and submitted baseline
+remain unchanged. Candidate meshes preserve body axes, origin and metre units.
+
+Method: exact bidirectional point-to-triangle distances on 1,200 samples in each
+direction; compare QEM aggressiveness 3, 5 and 9 within 4,096 vertices/faces;
+retain candidates only when mean and 95th-percentile error improve, mesh bounds
+stay within 0.5 mm, and closed source meshes remain closed. Validate selected
+candidates with independent seeds 73, 211 and 997.
+
+Validated candidates: episode 1 white_pot_lid, episode 15 wooden_spoon,
+episode 32 wooden_spoon. These are local source-surface proxy improvements,
+not verified Kaggle score improvements. All six metrics still need verification.
+
+Run analyze_multimetric.py using the original machine's .venv-submission.
+Dependencies additionally include scipy, trimesh, fast_simplification and rtree.
+The fixed BASE path intentionally reads the original preserved artifacts and
+writes research outputs under submission_review_20261102/multimetric_analysis.
+The offline delivery/container is a separate task and remains unverified.
