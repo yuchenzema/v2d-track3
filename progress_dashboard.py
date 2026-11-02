@@ -676,6 +676,32 @@ def collect():
             pipeline_execution['public_stage']=public_validation.get('phase')
             pipeline_execution['public_episode']=public_validation.get('active_episode')
             pipeline_execution['policy_training_steps']=queue_health.get('environment_steps',0)
+        if read_json(queue_dir/'own-geometry-policy.json',{}).get('enabled'):
+            # Historical public-validation bookkeeping is archived evidence;
+            # it cannot describe the current evaluation-only reconstruction.
+            from evaluation20_terminal import recorded_steps
+            own_rows={}
+            focus=human_match_loop.get('focused_episodes',[])
+            for ep in focus:
+                frontend=BASE/f'runs/evaluation_episode_{ep:06d}_frontend_20261029_v4_own_geometry_20261102'
+                cfg=read_json(frontend/'episode-config.json',{})
+                geometry=read_json(frontend/'research/own-geometry-provenance.json',{})
+                poses={name:len(list((frontend/'reconstruction/object_poses'/name).glob('*.json'))) for name in cfg.get('objects',[])}
+                own_rows[str(ep)]=dict(input_videos_verified=1 if geometry else 0,
+                    new_pipeline_reconstruction=(f"own meshes; native poses {sum(poses.values())}/{cfg.get('frames',0)*len(poses)}" if geometry else 'queued own RGB/depth reconstruction'),
+                    policy_training_steps=0,official_policy_rollout='pending',strict_completed=False)
+            current_run=Path(experimental_job['run']) if experimental_job.get('run') else None
+            if current_run and read_json(current_run/'episode-config.json',{}).get('own_geometry_required'):
+                ep=str(read_json(current_run/'episode-config.json',{}).get('episode'))
+                if ep in own_rows:own_rows[ep]['policy_training_steps']=recorded_steps(current_run) or 0
+            pipeline_execution=dict(updated_utc=human_match_loop.get('updated_utc'),episodes=focus,
+                strict_completed=queue_health.get('episodes_done',[]),per_episode=own_rows,
+                active_episode=human_match_loop.get('current_episode'),active_stage=source_cad.get('stage') or human_match_loop.get('phase'),
+                active_dataset_split='evaluation',public_excluded=True,public_episode=None,
+                public_stage='excluded by user; no supplied object scans',
+                policy_training_steps=recorded_steps(current_run) if current_run else 0,
+                report=artifact(queue_dir/'source-cad-status.json'),submission_ready=False,
+                submission_uploaded=read_json(queue_dir/'own-submission-status.json',{}).get('status')=='submitted')
         from kaggle_progress import current_scores,latest_comparison
         kaggle=current_scores(BATCH)
         comparison=latest_comparison(BATCH)
