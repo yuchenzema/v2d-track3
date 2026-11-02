@@ -21,7 +21,7 @@ Audit findings:
   not deleted or silently relabelled as compliant.
 
 Correction:
-- evaluation_rgb_depth_geometry_v1_20261102 builds a separate metric mesh per
+- evaluation_rgb_depth_geometry_v2_20261102 builds a separate metric mesh per
   object from evaluation RGB, source segmentation, and FoundationStereo depth.
 - Unobserved depth holes and backs are explicit completion estimates. A closed
   mesh is not a claim that unseen shape has been recovered or quality passed.
@@ -53,3 +53,14 @@ Exact human-match completion remains separate from local acceptance/submission.
 Optimization targets: AUC/SP-SR/MP-SR higher; RPE/MPPE/CD-O lower. A metric
 improvement is reported only from a current valid Kaggle result, never from old
 invalidated receipts, self-reference scores or mesh/identity controls.
+
+Source-instance repair (same session): EP1's legacy independent masks overlap by
+78.4% IoU at frame0 and 51.4% at frame102. The lid mask visibly includes the pot.
+The first own-geometry prototype is retained as rejected diagnostic evidence;
+no policy was trained on it. Revision v2 reconditions SAM on the separated,
+RGB-inspected frame150, derives cross-instance negative points, and requires
+exclusive visible ownership for all multi-object runs. The new masks live in
+fresh directories. Recomputed mutable depth/camera caches are real copies, so
+in-place cache writers cannot modify historical inputs. Completion thickness
+uses surface-normal scatter rather than camera-z variation (which confounds
+plate slant with thickness). All source/physics quality thresholds remain intact.

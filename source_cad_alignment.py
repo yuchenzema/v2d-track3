@@ -32,6 +32,7 @@ from source_forearm_occlusion import attach as attach_source_forearms
 
 VERSION = 5
 ALGORITHM_HASHES={name:digest(BASE/name) for name in ['source_cad_alignment.py','source_forearm_occlusion.py','source_cap_masks.py','source_feature_pose.py','source_marker_templates.py','source_marker_pose_proposals.py','source_photometric_reference.py','source_static_joint_fit.py','source_final_scene_audit.py','metric_surface_localisation.py','source_mask_rasterizer.py','source_mask_rasterizer.c','sphere_marker_reference.py','contour_pose_refinement.py']}
+ALGORITHM_HASHES.update({name:digest(BASE/name) for name in ['own_geometry.py','source_instance_prompts.py','fresh_evaluation_frontend.py']})
 LIMITS = dict(minimum_visible_pixels=60, minimum_iou=.90,
               maximum_centroid_error_px=3., maximum_boundary_error_px=3.,
               maximum_sphere_error_px=3.)

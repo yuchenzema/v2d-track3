@@ -14,7 +14,7 @@ import trimesh
 from scipy.ndimage import distance_transform_edt
 from improvement_common import BASE, BATCH, digest, save, utc
 
-REVISION='evaluation_rgb_depth_geometry_v1_20261102'
+REVISION='evaluation_rgb_depth_geometry_v2_20261102'
 
 
 def required(out=None,base=None):
@@ -58,7 +58,14 @@ def reconstruct_surface(rgb, mask, depth, intr, face_budget=3600):
     # This prior is intentionally independent of object identity/public scans.
     # Depth variation gives a conservative bound; the unseen side is uncertain.
     span=float(max(np.ptp(points[:,0]),np.ptp(points[:,1])))
-    thickness=float(np.clip(np.quantile(values,.9)-np.quantile(values,.1),.003,max(.003,min(.08,.35*span))))
+    # Camera-z variation mostly measures slant on a plate. Estimate the unseen
+    # completion from surface-normal scatter instead, with a conservative
+    # object-size bound; keep its uncertainty explicit in the proof.
+    observed=points[np.isfinite(points).all(1)]
+    _,_,basis=np.linalg.svd(observed-np.median(observed,axis=0),full_matrices=False)
+    normal=(observed-np.median(observed,axis=0))@basis[-1]
+    scatter=2*float(np.median(np.abs(normal-np.median(normal))))
+    thickness=float(np.clip(scatter,.003,max(.003,min(.04,.1*span))))
     backside=points.copy();backside[:,2]+=thickness
     count=len(points)
     edges=np.concatenate([faces[:,[0,1]],faces[:,[1,2]],faces[:,[2,0]]])

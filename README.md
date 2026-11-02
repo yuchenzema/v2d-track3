@@ -5,12 +5,18 @@ robot reference construction, residual policy training, and recorded evaluation.
 
 ## Current status
 
-This repository does not certify a completed challenge submission. As of
-2026-11-02, strict episode completion is **0/20**. A previous pipeline has
-selected policy checkpoints and physical recordings for all 20 evaluation
-episodes. The new source-aligned experimental pipeline has trained episode 38
-for 1,280,000 environment steps; its post-training quality checks did not pass.
-The remaining episodes are undergoing source alignment repairs.
+As of 2026-11-02, Kaggle has administratively invalidated all 29 previous
+submissions across six competitions. There are currently no valid scores and
+strict episode completion is **0/20**. The API gives no more specific reason.
+
+The official FAQ requires own reconstructed meshes to generate the policy
+trajectories, even when public scans exist. The historical geometry, texture,
+marker-template and actor lineage used public scans and is excluded from the
+new evaluation-only run. Original artifacts and receipts remain archived.
+The current serial controller rebuilds geometry from evaluation RGB and metric
+depth, rechecks every source frame, and trains fresh policies. Historical EP38
+training (1,280,000 steps per trial) is not compliant new-run progress.
+See `submission_docs/own-geometry-correction-20261102.txt`.
 
 The evaluation roster is:
 `1,3,5,6,8,10,14,15,16,19,20,25,28,30,32,33,35,36,37,38`.
@@ -55,19 +61,20 @@ is never counted as a passed episode.
 
 ## Formal submission requirements
 
-To submit the original 20 preserved policies while improvement continues, use:
+The original scan-derived cohort is blocked from new uploads. Historical IDs
+can still be queried without uploading:
 
 ```bash
-./submit_original20.sh
+./submit_original20.sh --poll
 ```
 
-This waits for the same serial controller to replay the original checkpoints
-with the official evaluator and pack the full roster. It then performs a fresh
-Kaggle dry-run, uploads all six Track 3 metrics, and waits for their scores.
-It does not require the new CAD improvement pipeline to pass strict completion.
-Use `--status` for a read-only progress check or `--poll` to resume score polling.
-An existing receipt is reused without uploading the same file again. Draft
-exports and incomplete replay rosters are never uploaded.
+`own_submission_queue.py` runs inside the same serial controller. Once all 20
+own-geometry policies pass the existing local motion/contact/grasp checks and
+official rollout provenance checks, it packs and validates the cohort, pushes
+the producing commit and submits to all six metrics. No extra approval or new
+worker is required. Existing receipts prevent duplicate uploads. Exact-match
+strict completion remains separate. `refresh_kaggle_status.py` refreshes current
+API states every ten minutes, overriding invalid historical scores in the GUI.
 
 Read `submission_kit_20261102/tracks/track_3/README.md` and
 `submission_kit_20261102/CONTAINER_SUBMISSION.md`.

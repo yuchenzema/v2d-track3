@@ -112,7 +112,7 @@ def prepare(source,episode):
     from own_geometry import required as own_required
     own=own_required(base=BASE)
     root=BASE/f'runs/evaluation_episode_{episode:06d}_frontend_20261029_v4'
-    if own:root=root.with_name(root.name+'_own_geometry_20261102')
+    if own:root=root.with_name(root.name+'_own_geometry_20261102_v2')
     for name in ['reconstruction','research','logs','scripts','evaluation','videos']:(root/name).mkdir(parents=True,exist_ok=True)
     for name in ['.venv-video','models']:
         target=root/name
@@ -121,21 +121,21 @@ def prepare(source,episode):
     if own:
         cached=BASE/f'runs/evaluation_episode_{episode:06d}_frontend_20261029_v4'
         if (cached/'reconstruction/foundation-stereo-sequence.json').is_file():source=cached
-        measurements+=['masks','sam2_prompts.json','masks-reviewed.json','source-prompt-review.json',
-                       'source-cap-mask-refinement.json','depth_moge','moge_intrinsics','depth','stereo_valid',
-                       'stereo-depth-alignment.json','sift-pnp-odometry.json','slam',
+        measurements+=['depth_moge','moge_intrinsics',
+                       'sift-pnp-odometry.json','slam',
                        'table-camera-calibration.npz','table-camera-calibration.json','table-initial-plane.npz']
     for name in measurements:
         src=source/'reconstruction'/name;dst=root/'reconstruction'/name
         # A resumed CAD repair already points at this fresh frontend. Copying
         # its cache onto itself also attempts copystat on Docker-owned dirs.
         if src.resolve()==dst.resolve():continue
-        if src.is_dir():shutil.copytree(src,dst,copy_function=copy_measurement,dirs_exist_ok=True)
-        elif src.is_file():copy_measurement(src,dst)
-    if own:
-        for name in ['source-cap-mask-refinement.json']:
-            src=source/'research'/name;dst=root/'research'/name
-            if src.is_file() and src.resolve()!=dst.resolve():copy_measurement(src,dst)
+        # These caches can be rewritten by source-mask/depth/camera stages.
+        # Real copies protect historical measurements from in-place writers.
+        mutable=name in {'camera_intrinsics.json','camera-frame-calibration.npz','camera-frame-calibration.json',
+                         'table-camera-calibration.npz','table-camera-calibration.json','table-initial-plane.npz','sparse_stereo_geometry.npz','slam'}
+        copier=shutil.copy2 if own and mutable else copy_measurement
+        if src.is_dir():shutil.copytree(src,dst,copy_function=copier,dirs_exist_ok=True)
+        elif src.is_file() and not dst.exists():copier(src,dst)
     moge=source/'reconstruction/depth_moge';depth=root/'reconstruction/depth'
     if moge.is_dir() and not depth.exists() and not (root/'reconstruction/depth_moge').exists():depth.symlink_to(moge)
     video=BASE/f'datasets/video_to_data_challenge/track_3/evaluation/videos/chunk-000/observation.images.ego_cam_a/episode_{episode:06d}.mp4'
@@ -150,6 +150,9 @@ def prepare(source,episode):
     if own:cfg.update(own_geometry_required=True,geometry_source='evaluation_rgb_depth',
                       photometric_refinement=True,source_feature_pose_enabled=True)
     save(root/'episode-config.json',cfg)
+    if own and not (root/'research/source-instance-initialization.json').is_file():
+        from source_instance_prompts import prepare as prepare_instances
+        prepare_instances(source,root,cfg)
     save(root/'research/frontend-input-provenance.json',dict(updated_utc=utc(),measurement_source=str(source),copied_measurement_names=MEASUREMENTS,
         old_object_poses_copied=False,old_scene_motion_copied=False,old_policies_copied=False,old_grasp_timing_copied=False,evaluation_pose_gt_used=False))
     return root,cfg
@@ -157,8 +160,9 @@ def prepare(source,episode):
 
 def run(source,episode,progress):
     root,cfg=prepare(source,episode)
-    stages=[('prepare','video-preparation.json'),('frames','source-frame-cache.json'),('prompts','sam2_prompts.json'),('metric','stereo-depth-alignment.json'),
-        ('masks','masks-reviewed.json'),('stereo','foundation-stereo-sequence.json'),('odometry','sift-pnp-odometry.json'),('generic','scene_motion_physical.npz')]
+    stages=[('prepare','video-preparation.json'),('frames','source-frame-cache.json'),('prompts','sam2_prompts.json'),
+        ('metric','stereo-depth-alignment.json'),('masks','masks-reviewed.json'),
+        ('stereo','foundation-stereo-sequence.json'),('odometry','sift-pnp-odometry.json'),('generic','scene_motion_physical.npz')]
     for stage,marker in stages:
         if stage!='frames' and (root/'reconstruction'/marker).exists():continue
         with (root/f'logs/frontend-{stage}.log').open('a') as log:
