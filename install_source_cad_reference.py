@@ -44,6 +44,12 @@ def install(root,approved):
     marker=root/'research/approved-source-cad-installed.json'
     cfg=json.loads((root/'episode-config.json').read_text());source_cfg=json.loads((approved/'episode-config.json').read_text())
     source=Path(source_cfg['source_reconstruction_run']);rec=root/'reconstruction'
+    if source_cfg.get('own_geometry_required'):
+        from own_geometry import validate
+        validate(approved)
+        assert not cfg.get('actor_transfer'),'Own reconstruction requires a fresh actor lineage'
+        cfg.update(own_geometry_required=True,dataset_split='evaluation',geometry_source='evaluation_rgb_depth')
+        shutil.copy2(approved/'research/own-geometry-provenance.json',root/'research/own-geometry-provenance.json')
     install_source_measurements(root,approved,source)
     if marker.exists():return
     assets=rec/'mesh_priors';assets.mkdir(exist_ok=True)
@@ -53,7 +59,9 @@ def install(root,approved):
         for suffix in ['ply','glb']:
             src=approved/f'reconstruction/mesh_priors/{name}.{suffix}'
             shutil.copy2(src,assets/src.name)
-        trimesh.load(assets/f'{name}.ply',process=False).export(assets/f'{name}.obj')
+        if source_cfg.get('own_geometry_required'):
+            shutil.copy2(approved/f'reconstruction/mesh_priors/{name}.obj',assets/f'{name}.obj')
+        else:trimesh.load(assets/f'{name}.ply',process=False).export(assets/f'{name}.obj')
         src=source/f'reconstruction/mesh_priors/{name}.urdf'
         if src.exists():shutil.copy2(src,assets/src.name)
     shutil.copy2(trajectory,rec/'scene_motion_physical.npz')

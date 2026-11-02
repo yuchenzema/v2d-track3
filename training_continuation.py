@@ -6,7 +6,8 @@ from improvement_common import digest,save,utc
 
 def extend(root,increment=12_800_000):
     root=Path(root);cfg=json.loads((root/'episode-config.json').read_text())
-    if cfg.get('experimental_training'):
+    own_continuation=cfg.get('own_geometry_required') and cfg.get('own_training_continuation_allowed')
+    if cfg.get('experimental_training') and not own_continuation:
         save(root/'research/experimental-continuation-skipped.json',dict(updated_utc=utc(),
              reason='Experimental pilot budget remains capped; a failed final audit does not authorize another 12.8M steps',
              training_budget=cfg['training_budget']))
@@ -18,11 +19,13 @@ def extend(root,increment=12_800_000):
     states=[p for p in folder.glob('state_*.safetensors') if p.with_name(p.name.replace('state_','policy_')).is_file()]
     assert states,'No resumable actor and learner checkpoint pair'
     latest=max(states,key=lambda p:int(p.stem.split('_')[-1]));step=int(latest.stem.split('_')[-1])
-    cfg.update(training_budget=step+increment,training_continuation_round=cfg.get('training_continuation_round',0)+1)
+    target=min(step+increment,cfg['own_training_maximum_steps']) if own_continuation else step+increment
+    assert target>step,'Authorized own-policy training budget exhausted'
+    cfg.update(training_budget=target,training_continuation_round=cfg.get('training_continuation_round',0)+1)
     save(root/'episode-config.json',cfg)
     save(root/f"research/training-continuation-{cfg['training_continuation_round']:03d}.json",
          dict(updated_utc=utc(),from_checkpoint=str(latest),from_checkpoint_sha256=digest(latest),
-              resume_environment_steps=step,additional_environment_steps_requested=increment,
+              resume_environment_steps=step,additional_environment_steps_requested=target-step,
               target_environment_steps=cfg['training_budget'],frozen_input_hashes_verified=True,
               optimizer_restore_required=True,object_assistance_force_N=0.,object_assistance_torque_Nm=0.))
     (folder/'TRAINING_COMPLETED').unlink(missing_ok=True)

@@ -6,6 +6,17 @@ from kaggle_progress import receipt_scores,compare_receipts,METRICS
 
 
 class KaggleProgressTests(unittest.TestCase):
+    def test_live_administrative_invalidation_overrides_cached_complete_scores(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);path=root/'receipt.json'
+            path.write_text(json.dumps(dict(submissions={'add_auc':dict(state='COMPLETE',public_score='.99',ref=123)})))
+            (root/'kaggle-live-status.json').write_text(json.dumps(dict(checked_utc='2026-11-02T19:00:00Z',metrics={
+                'add_auc':dict(submissions=[dict(ref=123,state='ERROR',public_score=None,error='Submission has been administratively invalidated')])})))
+            scores=receipt_scores(path)
+            self.assertEqual(scores['completed'],0);self.assertEqual(scores['invalidated'],1)
+            self.assertIsNone(scores['metrics'][0]['score']);self.assertTrue(scores['metrics'][0]['live_verified'])
+            comparison=compare_receipts(path,path)
+            self.assertEqual(comparison['improved'],0);self.assertFalse(comparison['non_regressing'])
     def test_partial_or_mixed_improvements_cannot_claim_all_six_improved(self):
         with tempfile.TemporaryDirectory() as d:
             old=Path(d)/'old.json';new=Path(d)/'new.json'

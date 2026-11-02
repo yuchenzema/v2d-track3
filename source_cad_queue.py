@@ -51,7 +51,10 @@ def source_for(ep):
 def run(out,focus,coverage_only=False):
     path=out/'source-cad-status.json';cad=read(path,{})
     validated=read(out/'validated-pipeline-policy.json',{}).get('enabled',False)
+    from own_geometry import required as own_required
+    own=own_required(out)
     version='fresh_stereo_sift_frontend_v4' if read(out/'validated-pipeline-policy.json',{}).get('camera_odometry_method')=='sift_pnp_metric' else 'depth_markers_source_clock_v2'
+    if own:version='evaluation_rgb_depth_geometry_v1_20261102'
     if validated and cad.get('pipeline_version')!=version:
         if cad:save(out/f'source-cad-status-before-validated-{int(time.time())}.json',cad)
         cad=dict(pipeline_version=version,results={},attempts={})
@@ -81,6 +84,9 @@ def run(out,focus,coverage_only=False):
                        policy_training_allowed=False)
             state.update(status='awaiting_safe_controller_reload',current_episode=None,active_optimization=None)
             emit();return False
+        if own:
+            from own_submission_queue import run as submit_own_cohort
+            submit_own_cohort(out,focus)
         if not coverage_only:
             from submission_replay_queue import pending as submission_replay_pending
             if submission_replay_pending(out):
@@ -132,6 +138,7 @@ def run(out,focus,coverage_only=False):
         ep=pending[0];key=str(ep)
         source=Path(cad.setdefault('sources',{}).setdefault(key,str(source_for(ep))))
         root=BASE/f'runs/episode_{ep:06d}_cad_source_{"validated_v4" if version=="fresh_stereo_sift_frontend_v4" else "validated" if validated else "alignment"}_20261029'
+        if own:root=BASE/f'runs/episode_{ep:06d}_cad_source_own_geometry_20261102'
         previous_failure=cad.pop('latest_failure',None)
         if previous_failure:
             cad['previous_failure']=dict(episode=ep,message=previous_failure,archived_utc=utc())
@@ -150,7 +157,7 @@ def run(out,focus,coverage_only=False):
         emit()
         try:
             with episode_slot(root,ep):
-                if version=='fresh_stereo_sift_frontend_v4':
+                if version=='fresh_stereo_sift_frontend_v4' or own:
                     from fresh_evaluation_frontend import run as rebuild_frontend
                     def frontend_progress(frontend,stage):
                         cad.update(stage=f'fresh_video_frontend_{stage}',run=str(frontend))

@@ -676,8 +676,8 @@ def collect():
             pipeline_execution['public_stage']=public_validation.get('phase')
             pipeline_execution['public_episode']=public_validation.get('active_episode')
             pipeline_execution['policy_training_steps']=queue_health.get('environment_steps',0)
-        from kaggle_progress import receipt_scores,latest_comparison
-        kaggle=receipt_scores(BATCH/'official_submission_20261102/original20.kaggle-receipt.json')
+        from kaggle_progress import current_scores,latest_comparison
+        kaggle=current_scores(BATCH)
         comparison=latest_comparison(BATCH)
         from evaluation20_terminal import pilot_validation
         SNAPSHOT={'pilot_validation':pilot_validation(queue_dir),'kaggle_scores':kaggle,'source_pose_repair':source_pose_repair,'full_roster_review':full_roster_review,'training_pause':user_pause,'generated_utc':datetime.now(timezone.utc).isoformat(),'frontend_version':frontend_version(),'source_updated_utc':max([batch.get('updated_utc',''),precision.get('updated_utc','')]+[r.get('updated_utc') or '' for r in current_trials]+[(r.get('videos',{}).get('latest') or {}).get('validated_utc') or '' for r in episodes]+[r.get('updated_utc','') for r in latest_reviews.values()]),

@@ -54,6 +54,8 @@ def build(training_root):
     source_cfg=json.loads((approved/'episode-config.json').read_text())
     source_cfg.update(run=str(root),experimental_only=True,source_reference_repaired=True)
     save(root/'episode-config.json',source_cfg)
+    if source_cfg.get('own_geometry_required'):
+        shutil.copy2(approved/'research/own-geometry-provenance.json',root/'research/own-geometry-provenance.json')
     trajectory=root/'reconstruction/cad-source-trajectory.npz'
     np.savez_compressed(trajectory,**motion)
     rec=root/'reconstruction';intr=json.loads((rec/'camera_intrinsics.json').read_text())
@@ -63,8 +65,8 @@ def build(training_root):
         vertices,inverse=np.unique(mesh.vertices,axis=0,return_inverse=True)
         renderers[name]=MeshSilhouette(vertices,inverse[mesh.faces],intr)
     out=BATCH/'focused_episodes_20261028'
-    templates=load_templates(out/'huggingface_audit_20261028/marker-templates.json',
-        out/'source-marker-feature-review.json',root/'research/source-marker-template-review.json')
+    templates=({} if source_cfg.get('own_geometry_required') else load_templates(out/'huggingface_audit_20261028/marker-templates.json',
+        out/'source-marker-feature-review.json',root/'research/source-marker-template-review.json'))
     records=copy.deepcopy(json.loads(Path(original['frames_report']).read_text()))
     final=audit(root,source_cfg,motion,renderers,records,hands,intr,templates,
         human_mask,object_visibility,metrics,qualifies)

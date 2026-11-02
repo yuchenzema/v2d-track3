@@ -73,6 +73,9 @@ def main():
             print('沿用已存在的 receipt，只查詢分數，不重新提交。',flush=True)
             return subprocess.call(poll_command(receipt),cwd=BASE)
         if args.poll:raise RuntimeError('尚無 receipt；沒有執行任何上傳。')
+        policy=read(QUEUE/'own-geometry-policy.json')
+        if policy.get('enabled'):
+            raise RuntimeError('舊版提交使用公開掃描衍生網格，已禁止重新上傳。請沿用 evaluation 自建幾何流程；既有 receipt 仍可唯讀查詢。')
         print('提交原本 20 集。等待既有 controller 的官方重評與打包；背景改善持續。',flush=True)
         print('進度每 10 分鐘顯示；Ctrl+C 結束本提交監看，背景 controller 繼續。',flush=True)
         last_report=0

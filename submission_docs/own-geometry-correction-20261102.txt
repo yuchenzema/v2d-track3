@@ -1,0 +1,55 @@
+Track 3 correction, 2026-11-02
+
+Live Kaggle audit: all 29 previously submitted files across six competitions
+have status ERROR and errorDescription "Submission has been administratively
+invalidated". The API supplies no more specific administrative reason. Historical
+receipt scores are retained as evidence, but are not current valid scores.
+
+Authoritative task clarification:
+https://nvidia-isaac.github.io/video_to_data/v2d_challenge/assets/v2d_challenge_2026_faqs.pdf
+The Track 3 valid-submission answer requires learned-policy trajectories and own
+reconstructed meshes for all 20 videos. Public object scans cannot substitute
+for reconstruction when generating the trajectories. The rule applies upstream
+of simulation, not only to the exported CD-O file.
+
+Audit findings:
+- batch_scene.py historically copied public object URDF/scan geometry.
+- source_cad_alignment.py historically copied those scans, used their textures
+  and used scan-derived 3D marker templates.
+- Old trained actors and all previously submitted cohorts therefore have
+  ineligible reconstruction lineage for this correction. They are archived,
+  not deleted or silently relabelled as compliant.
+
+Correction:
+- evaluation_rgb_depth_geometry_v1_20261102 builds a separate metric mesh per
+  object from evaluation RGB, source segmentation, and FoundationStereo depth.
+- Unobserved depth holes and backs are explicit completion estimates. A closed
+  mesh is not a claim that unseen shape has been recovered or quality passed.
+- Source RGB vertex colors replace supplied scan textures. Scan-derived 3D
+  fiducial templates and historical actor transfer are excluded.
+- The exact own mesh goes through fresh FoundationPose, every-frame source CAD
+  fitting, physical retargeting, fresh learner initialization and official replay.
+- Immutable input/mesh digests bind geometry, policy training and submission.
+- Same serial systemd controller and global episode lock. No duplicate GPU worker.
+- Source admission, strict motion checks and contact tolerances are unchanged.
+- Own-policy optimization may resume its own learner/optimizer with the same
+  frozen reference, up to the authorized 12.8M-step cap; historical scan-trained
+  actors cannot provide initialization. Actual new steps are reported separately.
+- EP25 preservation follows its original baseline and verifies real artifact
+  hashes if no legacy release manifest exists. It never creates empty evidence.
+- Kaggle status refresh is read-only every ten minutes; GUI refresh stays five
+  seconds and terminal progress stays ten minutes without model calls.
+
+Automatic upload:
+own_submission_queue.py runs inside the same serial controller. It waits for a
+complete 20-episode own-geometry cohort with actual policy training, unchanged
+local motion/contact/grasp acceptance, and full-source-clock official rollouts.
+It uses the official packer/preflight, pushes the producing commit, uploads the
+same cohort to all six competitions, and retains exact submission IDs/receipts.
+Existing receipts prevent duplicate uploads. Invalidated scores never satisfy a
+comparison or completion gate. No new upload has been performed at this audit.
+Exact human-match completion remains separate from local acceptance/submission.
+
+Optimization targets: AUC/SP-SR/MP-SR higher; RPE/MPPE/CD-O lower. A metric
+improvement is reported only from a current valid Kaggle result, never from old
+invalidated receipts, self-reference scores or mesh/identity controls.

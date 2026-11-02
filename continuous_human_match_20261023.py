@@ -185,6 +185,12 @@ def public_validation_required(policy):
 
 
 def main():
+    # Own-geometry scope supersedes historical policy/scan replay requests.
+    from own_geometry import required as own_required
+    own=own_required(OUT)
+    if own:
+        from own_submission_queue import run as submit_own_cohort
+        submit_own_cohort(OUT,FOCUS)
     if public_validation_required(read(OUT/'validated-pipeline-policy.json',{})):
         from public_validation_pipeline import worker,public_reconstruction_coverage_complete,evaluation_source_coverage_pending
         while public_validation_required(read(OUT/'validated-pipeline-policy.json',{})):
@@ -202,13 +208,16 @@ def main():
                 audit_evaluation_sources(OUT,FOCUS,coverage_only=True)
             time.sleep(60)
     from submission_replay_queue import run as replay_preserved_policies
-    if replay_preserved_policies(OUT,FOCUS):return
+    if not own and replay_preserved_policies(OUT,FOCUS):return
     if read(OUT/'experimental-training-policy.json',{}).get('enabled'):
         from evaluation_experiment_queue import run as run_experiments
         if run_experiments(OUT,FOCUS):return
     if read(OUT/'source-first-policy.json',{}).get('enabled'):
         from source_cad_queue import run
         if not run(OUT,FOCUS):return
+    if own:
+        # Never fall through into the historical scan-based policy dispatcher.
+        return
     OUT.mkdir(exist_ok=True);state=read(OUT/'status.json',{})
     prior_active=state.get('active_optimization')
     state.update(status='checking_original_videos',active_optimization=None,expected_episodes=FOCUS,active=True,

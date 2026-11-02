@@ -109,18 +109,33 @@ def ensure_monocular_depth(root,cfg):
 def prepare(source,episode):
     import shutil
     source=Path(source);old=json.loads((source/'episode-config.json').read_text())
+    from own_geometry import required as own_required
+    own=own_required(base=BASE)
     root=BASE/f'runs/evaluation_episode_{episode:06d}_frontend_20261029_v4'
+    if own:root=root.with_name(root.name+'_own_geometry_20261102')
     for name in ['reconstruction','research','logs','scripts','evaluation','videos']:(root/name).mkdir(parents=True,exist_ok=True)
     for name in ['.venv-video','models']:
         target=root/name
         if not target.exists() and not target.is_symlink():target.symlink_to(BASE/'runs/episode_000005_newton_20261015'/name)
-    for name in MEASUREMENTS:
+    measurements=list(MEASUREMENTS)
+    if own:
+        cached=BASE/f'runs/evaluation_episode_{episode:06d}_frontend_20261029_v4'
+        if (cached/'reconstruction/foundation-stereo-sequence.json').is_file():source=cached
+        measurements+=['masks','sam2_prompts.json','masks-reviewed.json','source-prompt-review.json',
+                       'source-cap-mask-refinement.json','depth_moge','moge_intrinsics','depth','stereo_valid',
+                       'stereo-depth-alignment.json','sift-pnp-odometry.json','slam',
+                       'table-camera-calibration.npz','table-camera-calibration.json','table-initial-plane.npz']
+    for name in measurements:
         src=source/'reconstruction'/name;dst=root/'reconstruction'/name
         # A resumed CAD repair already points at this fresh frontend. Copying
         # its cache onto itself also attempts copystat on Docker-owned dirs.
         if src.resolve()==dst.resolve():continue
         if src.is_dir():shutil.copytree(src,dst,copy_function=copy_measurement,dirs_exist_ok=True)
         elif src.is_file():copy_measurement(src,dst)
+    if own:
+        for name in ['source-cap-mask-refinement.json']:
+            src=source/'research'/name;dst=root/'research'/name
+            if src.is_file() and src.resolve()!=dst.resolve():copy_measurement(src,dst)
     moge=source/'reconstruction/depth_moge';depth=root/'reconstruction/depth'
     if moge.is_dir() and not depth.exists() and not (root/'reconstruction/depth_moge').exists():depth.symlink_to(moge)
     video=BASE/f'datasets/video_to_data_challenge/track_3/evaluation/videos/chunk-000/observation.images.ego_cam_a/episode_{episode:06d}.mp4'
@@ -132,6 +147,8 @@ def prepare(source,episode):
         photometric_refinement=True,static_joint_refinement=True,source_feature_pose_enabled=True,
         submission_mesh_face_budget=3600,grasps=[],support_intervals={},
         evaluation_ground_truth_used=False,purpose='Fresh source-video measurements, not historical object-pose replay')
+    if own:cfg.update(own_geometry_required=True,geometry_source='evaluation_rgb_depth',
+                      photometric_refinement=True,source_feature_pose_enabled=True)
     save(root/'episode-config.json',cfg)
     save(root/'research/frontend-input-provenance.json',dict(updated_utc=utc(),measurement_source=str(source),copied_measurement_names=MEASUREMENTS,
         old_object_poses_copied=False,old_scene_motion_copied=False,old_policies_copied=False,old_grasp_timing_copied=False,evaluation_pose_gt_used=False))

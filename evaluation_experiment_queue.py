@@ -15,7 +15,7 @@ def read(path):
 
 
 def execution_inputs():
-    return {name:digest(BASE/name) for name in ['evaluation_experiment_queue.py','execute_human_match_job_20261023.py',
+    return {name:digest(BASE/name) for name in ['evaluation_experiment_queue.py','execute_human_match_job_20261023.py','own_geometry.py','preserved_release.py',
         'rerun_four_episodes_20261023.py','install_source_cad_reference.py',
         'experimental_training_admission.py','source_cad_training_gate.py',
         'fit_full_trajectory_contacts_20261023.py','optimize_native_grasps.py','native_pinch_contacts.py',
@@ -52,6 +52,8 @@ def resumable_request(previous,source_attempt,status,episode,trajectory_sha256):
 
 
 def candidates(out,focus,policy):
+    from own_geometry import required as own_required,validate as validate_own
+    own=own_required(out)
     reports=read(out/'source-cad-status.json').get('results',{})
     registered={}
     for ep,path in read(out/'experimental-source-candidates.json').items():
@@ -65,6 +67,9 @@ def candidates(out,focus,policy):
             and repaired.get('physical_projection_applied') is True and assess(repaired,policy)['admitted'] else None)
         seen=set()
         for report in [reports.get(str(ep),{}),registered.get(str(ep),{})]:
+            if own:
+                try:validate_own(Path(report['run']))
+                except (KeyError,OSError,ValueError):continue
             signature=report.get('trajectory_sha256')
             if not signature or signature in seen:continue
             seen.add(signature)
@@ -96,6 +101,9 @@ def run(out,focus):
     if not available:
         blocked=read(out/'experimental-training-status.json')
         if blocked.get('status')!='pilot_blocked':return False
+        from own_geometry import required as own_required
+        if own_required(out) and not read(Path(blocked.get('run',''))/'episode-config.json').get('own_geometry_required'):
+            return False
         # A failed pilot is an actionable blocker, not a reason to spend hours
         # silently repeating unrelated CAD fits. New execution inputs re-admit it.
         while read(out/'experimental-training-policy.json').get('enabled'):
@@ -123,6 +131,15 @@ def run(out,focus):
         public_validation_manifest=str(out/'pipeline_validation_20261029/status.json'),
         training_budget=int(policy['training_budget']),time_advance_frames=0.,require_full_sequence_pickup=True,
         worst_windows=[dict(start=0,end=report['source_frames']-1,source='Full unwarped source sequence')])
+    from own_geometry import required as own_required
+    if own_required(out):
+        own_policy=read(out/'own-geometry-policy.json')
+        job['training_budget']=int(own_policy.get('training_budget',policy['training_budget']))
+        job['own_geometry_required']=True
+        job['own_training_continuation_allowed']=True
+        job['own_training_maximum_steps']=int(own_policy.get('maximum_training_steps',12_800_000))
+        job['own_training_round_increment']=int(own_policy.get('training_round_increment',5_760_000))
+    job['producing_code_commit']=subprocess.check_output(['git','rev-parse','HEAD'],cwd=BASE,text=True).strip()
     request=out/f'jobs/episode_{ep:06d}-experimental-g{generation:03d}.json'
     latest=status.get('attempts',{}).get(str(ep),{})
     source_attempt=latest.get('source_attempts',{}).get(report['trajectory_sha256'],{})
@@ -133,7 +150,8 @@ def run(out,focus):
             request=prior_request;job=prior;generation=job['generation']
     job.update(source_run=str(source),baseline_run=str(source))
     from actor_transfer_training import recipe as actor_recipe
-    transfer=actor_recipe(ep,BASE)
+    from own_geometry import required as own_required
+    transfer=None if own_required(out) else actor_recipe(ep,BASE)
     if transfer:job['actor_transfer']=transfer
     job['execution_input_hashes']=execution_inputs()
     save(request,job)

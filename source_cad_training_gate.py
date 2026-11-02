@@ -24,6 +24,10 @@ def require_source_cad_alignment(episode,training_root):
         assert report.get('local_overlap_failed_object_frames')==0,'CAD does not overlap source objects on every frame; training blocked'
     assert report.get('unobservable_object_frames')==0,'Hidden source object poses remain unverified; training blocked'
     root=Path(report['run'])
+    from own_geometry import required as own_required,validate as validate_own
+    if own_required(folder):
+        assert not cfg.get('actor_transfer'),'Public-scan-trained actor lineage is ineligible for the own-geometry rerun'
+        validate_own(root,training_root)
     assert digest(root/'reconstruction/cad-source-trajectory.npz')==report['trajectory_sha256'],'CAD trajectory evidence is stale'
     assert digest(Path(json.loads((root/'episode-config.json').read_text())['source']))==report['source_video_sha256'],'Source video changed'
     for name,expected in report.get('geometry_sha256',{}).items():

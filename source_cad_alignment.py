@@ -215,6 +215,13 @@ def initialize(source, root):
     for folder in ['reconstruction', 'research', 'videos', 'evaluation', 'logs']:
         (root/folder).mkdir(exist_ok=True)
     cfg = json.loads((source/'episode-config.json').read_text())
+    own=cfg.get('own_geometry_required',False)
+    from own_geometry import required as own_required
+    if cfg.get('dataset_split')!='public' and own_required() and not own:
+        raise ValueError('Evaluation scope requires own geometry; historical public-scan reconstruction is ineligible')
+    if own:
+        from own_geometry import validate
+        validate(source)
     validation=BATCH/'focused_episodes_20261028/pipeline_validation_20261029/status.json'
     if cfg.get('dataset_split')!='public' and validation.exists():
         admitted=json.loads(validation.read_text())
@@ -245,11 +252,11 @@ def initialize(source, root):
         # Preserve the metric scan frame. Missing spoon geometry is explicitly
         # labelled a reconstruction estimate, never a released CAD asset.
         folder=BASE/f'datasets/video_to_data_challenge/track_3/public/mesh/{name}'
-        public=next((p for p in [folder/f'{name}_visual.glb',folder/f'{name}.glb'] if p.exists()),folder/f'{name}_visual.glb')
-        src = public if public.exists() else source/f'reconstruction/mesh_priors/{name}.ply'
+        public=None if own else next((p for p in [folder/f'{name}_visual.glb',folder/f'{name}.glb'] if p.exists()),folder/f'{name}_visual.glb')
+        src = public if public is not None and public.exists() else source/f'reconstruction/mesh_priors/{name}.ply'
         dst = assets/f'{name}.ply'
         if not dst.exists():
-            if public.exists():
+            if public is not None and public.exists():
                 mesh=trimesh.load(src,force='scene',process=False).to_geometry()
                 budget=cfg.get('submission_mesh_face_budget')
                 if budget and len(mesh.faces)>budget:
@@ -260,11 +267,16 @@ def initialize(source, root):
         geometry[name] = dict(path=str(dst), sha256=digest(dst),
                               vertices=len(mesh.vertices), faces=len(mesh.faces),
                               extents_m=mesh.extents.tolist(),
-                              source='video reconstruction estimate; thickness remains a prior' if name=='wooden_spoon' else 'released metric CAD scan fitted to this episode',
+                              source='evaluation RGB and metric depth; unseen-back completion prior' if own else 'video reconstruction estimate; thickness remains a prior' if name=='wooden_spoon' else 'released metric CAD scan fitted to this episode',
                               source_mesh=str(src), source_mesh_sha256=digest(src))
         if not (assets/f'{name}.glb').exists():
-            if public.exists() and not cfg.get('submission_mesh_face_budget'):shutil.copy2(public,assets/f'{name}.glb')
+            if own:shutil.copy2(source/f'reconstruction/mesh_priors/{name}.glb',assets/f'{name}.glb')
+            elif public is not None and public.exists() and not cfg.get('submission_mesh_face_budget'):shutil.copy2(public,assets/f'{name}.glb')
             else:mesh.export(assets/f'{name}.glb')
+    if own:
+        shutil.copy2(source/'research/own-geometry-provenance.json',root/'research/own-geometry-provenance.json')
+        for name in cfg['objects']:
+            for suffix in ['obj','urdf']:shutil.copy2(source/f'reconstruction/mesh_priors/{name}.{suffix}',assets/f'{name}.{suffix}')
     raw=source/'reconstruction/scene_motion.npz'
     src=raw if cfg.get('source_only_reconstruction') and raw.exists() else source/'reconstruction/scene_motion_physical.npz'
     initial = rec/'source-initial-motion.npz'
@@ -309,7 +321,7 @@ def fit(source, root, maxfev=100, repair_only=False):
     if checkpoint.exists():motion['object_to_world']=np.load(checkpoint)['object_to_world']
     intr=json.loads((rec/'camera_intrinsics.json').read_text());hands=np.load(rec/'hand_measurements.npz')
     if cfg.get('validated_video_pipeline'):hands=attach_source_forearms(root,hands,count,len(cfg['objects']))
-    marker_reviews,marker_review_binding=load_reviews(cfg,rec)
+    marker_reviews,marker_review_binding=([],None) if cfg.get('own_geometry_required') else load_reviews(cfg,rec)
     reviewed_marker_objects={row['object'] for row in marker_reviews}
     save(root/'research/source-marker-review.json',dict(binding=marker_review_binding,reviewed_objects=sorted(reviewed_marker_objects),
          source_image_points_only=True,ground_truth_used=False,does_not_prove_episode_completion=True))
@@ -319,9 +331,9 @@ def fit(source, root, maxfev=100, repair_only=False):
         records=[r for r in records if r['local_overlap_pass'] or r['visibility']!='visible']
     done={(r['frame'],r['object']) for r in records}
     assert len(motion['object_to_world'])==count
-    templates=load_marker_templates(BATCH/'focused_episodes_20261028/huggingface_audit_20261028/marker-templates.json',
-         BATCH/'focused_episodes_20261028/source-marker-feature-review.json',root/'research/source-marker-template-review.json')
-    if 'wooden_spoon' in cfg['objects']:
+    templates=({} if cfg.get('own_geometry_required') else load_marker_templates(BATCH/'focused_episodes_20261028/huggingface_audit_20261028/marker-templates.json',
+         BATCH/'focused_episodes_20261028/source-marker-feature-review.json',root/'research/source-marker-template-review.json'))
+    if not cfg.get('own_geometry_required') and 'wooden_spoon' in cfg['objects']:
         from spoon_marker_geometry import recover
         spoon=recover(source,cfg,motion,intr,root)
         if spoon['markers']:
@@ -346,10 +358,10 @@ def fit(source, root, maxfev=100, repair_only=False):
         renderers[name]=MeshSilhouette(vertices,faces,intr)
         if cfg.get('photometric_refinement'):
             folder=BASE/f'datasets/video_to_data_challenge/track_3/public/mesh/{name}'
-            texture=next((p for p in [folder/f'{name}_visual.glb',folder/f'{name}.glb'] if p.exists()),None)
+            texture=(rec/f'mesh_priors/{name}.glb' if cfg.get('own_geometry_required') else next((p for p in [folder/f'{name}_visual.glb',folder/f'{name}.glb'] if p.exists()),None))
             photometric[name]=MeshPhotometricReference.from_mesh(texture) if texture else None
     save(root/'research/photometric-reference.json',dict(enabled=bool(cfg.get('photometric_refinement')),
-         method='Released scan texture samples projected into each source RGB frame; front-surface depth and hand/object occlusion checks; per-view exposure normalization',
+         method=('Own reconstructed source RGB vertex colors' if cfg.get('own_geometry_required') else 'Released scan texture samples')+' projected into each source RGB frame; front-surface depth and hand/object occlusion checks; per-view exposure normalization',
          objects={name:dict(available=reference is not None,samples=len(reference.points) if reference else 0) for name,reference in photometric.items()},ground_truth_used=False))
     def progress(stage, frame):
         save(root/'research/cad-progress.json',dict(updated_utc=utc(),episode=cfg['episode'],
@@ -379,7 +391,7 @@ def fit(source, root, maxfev=100, repair_only=False):
             template=templates.get(name); seed=camera@motion['object_to_world'][frame,body]
             metric_seed=translation_seed(renderer,seed,intr,stereo,target&valid,visibility=valid) if stereo is not None else None
             feature=None;independent_markers=False
-            if cfg.get('source_feature_pose_enabled') and source_feature_reference_available(name,frame,records):
+            if cfg.get('source_feature_pose_enabled') and ((cfg.get('own_geometry_required') and frame>0) or source_feature_reference_available(name,frame,records)):
                 previous_image=cv2.imread(str(rec/f"frames/{frame-1:06d}.{cfg.get('frame_cache_format','png')}"))
                 previous_mask=cv2.imread(str(rec/f'masks/{body+1}/{frame-1:06d}.png'),0)>0
                 previous_pose=np.linalg.inv(motion['camera_to_world'][frame-1])@motion['object_to_world'][frame-1,body]
@@ -569,6 +581,7 @@ def fit(source, root, maxfev=100, repair_only=False):
     source_video=Path(cfg['source'])
     records.sort(key=lambda x:(x['frame'],x['object']));save(records_path,records)
     summary=dict(updated_utc=utc(),version=VERSION,episode=cfg['episode'],run=str(root),source_run=str(source),
+                 own_geometry_required=bool(cfg.get('own_geometry_required')),
                  algorithm_files_sha256=ALGORITHM_HASHES,
                  final_scene_occlusion_rechecked=final_audit['all_object_frames_rechecked'],
                  final_scene_audit=str(root/'research/cad-final-scene-audit.json'),

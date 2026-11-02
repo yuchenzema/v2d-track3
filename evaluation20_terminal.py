@@ -69,6 +69,7 @@ def pilot_validation(out):
     experiment=read(Path(out)/'experimental-training-status.json')
     if not experiment.get('run'):return {}
     run=Path(experiment['run']);cfg=read(run/'episode-config.json')
+    if read(Path(out)/'own-geometry-policy.json').get('enabled') and not cfg.get('own_geometry_required'):return {}
     strict=read(run/'research/strict-human-match.json')
     grasp=strict.get('post_training_grasp_acceptance') or {}
     bound=(bool(strict.get('checkpoint_sha256')) and grasp.get('policy_inference') is True
@@ -123,10 +124,11 @@ def start_services(out, resume=False):
 def snapshot(out):
     public = read(out/'pipeline_validation_20261029/status.json')
     state = read(out/'status.json')
+    own=read(out/'own-geometry-policy.json').get('enabled',False)
     experimental=read(out/'experimental-training-status.json')
     submission=read(out/'submission-replay-status.json')
-    from kaggle_progress import receipt_scores,latest_comparison
-    kaggle=receipt_scores(out.parent/'official_submission_20261102/original20.kaggle-receipt.json')
+    from kaggle_progress import current_scores,latest_comparison
+    kaggle=current_scores(out.parent)
     comparison=latest_comparison(out.parent)
     cad = read(out/'source-cad-status.json')
     health = read(out/'health-monitor.json')
@@ -163,7 +165,7 @@ def snapshot(out):
         except (OSError, ValueError, TypeError):
             pass
     failure = cad.get('latest_failure') if source_active else None
-    if experimental.get('status')=='pilot_blocked':
+    if experimental.get('status')=='pilot_blocked' and (not own or read(Path(experimental.get('run',''))/'episode-config.json').get('own_geometry_required')):
         trained=bool(run and (Path(run)/'flash_chord_coherent_actor_transfer/TRAINING_COMPLETED').exists())
         prefix='訓練後驗證／匯出失敗：' if trained else '實驗訓練前流程失敗：'
         failure=prefix+str(experimental.get('failure_summary') or experimental.get('latest_failure') or 'See experimental-training-status.json')
@@ -198,7 +200,8 @@ def snapshot(out):
                 learner_pids=sorted(learners), training_steps=steps,
                 recorded_training_steps_by_episode=history,
                 pilot_validation=pilot_validation(out),
-                submission_replay=submission,
+                submission_replay={} if own else submission,
+                own_geometry_required=own,
                 kaggle_scores=kaggle,
                 kaggle_comparison=comparison,
                 blocking_failure=failure, health=health.get('status'),
@@ -238,11 +241,11 @@ def render(report):
         f"目前 episode={report['active_episode']}；階段={report['stage'] or report['state']}{progress}",
         f"CAD 已審核 {report['inspected']}/20；來源局部檢查通過 {report['source_locally_passed']}/20；嚴格完成 {report['strict_completion_count']}/20",
         (f"新版官方重評 {len(report.get('submission_replay',{}).get('episodes',{}))}/20；狀態={report.get('submission_replay',{}).get('status')}。" if report.get('submission_replay') else ''),
-        ('舊版 Kaggle 已評分 '+str(report['kaggle_scores']['completed'])+'/6：'+', '.join(f"{r['name']}={r['score']:.5f}{r['unit']}" for r in report['kaggle_scores']['metrics'] if r['score'] is not None) if report.get('kaggle_scores') else ''),
+        (('Kaggle：舊提交已由管理端作廢 '+str(report['kaggle_scores']['invalidated'])+'/6，目前無有效成績。' if report['kaggle_scores'].get('invalidated') else 'Kaggle 有效評分 '+str(report['kaggle_scores']['completed'])+'/6：'+', '.join(f"{r['name']}={r['score']:.5f}{r['unit']}" for r in report['kaggle_scores']['metrics'] if r['score'] is not None)) if report.get('kaggle_scores') else ''),
         (f"最新 Kaggle 候選已評分 {report['kaggle_comparison']['completed']}/6：改善 {report['kaggle_comparison']['improved']} 項、持平 {report['kaggle_comparison']['unchanged']} 項、退步 {report['kaggle_comparison']['regressed']} 項；六項全部提升={report['kaggle_comparison']['all_six_strictly_improved']}。" if report.get('kaggle_comparison') else ''),
         (f"Policy learner 已啟動，steps={report['training_steps'] if report['training_steps'] is not None else '初始化／編譯中，等待首筆回報'}，PID={report['learner_pids']}" if report['learner_pids']
          else f"目前沒有 policy 在訓練；此 run 已記錄訓練 steps={report['training_steps'] or 0}。"),
-        '已記錄的實驗訓練：'+(', '.join(f"episode {ep}={steps:,} steps" for ep,steps in report.get('recorded_training_steps_by_episode',{}).items()) or '尚無；品質驗收另計。'),
+        ('歷史實驗訓練（包含已排除的掃描衍生舊 run）：' if report.get('own_geometry_required') else '已記錄的實驗訓練：')+(', '.join(f"episode {ep}={steps:,} steps" for ep,steps in report.get('recorded_training_steps_by_episode',{}).items()) or '尚無；品質驗收另計。'),
         (f"最新實驗 episode {report['pilot_validation']['episode']}：訓練 {'完成' if report['pilot_validation']['training_finished'] else '尚未完成'}；policy 抓取={'通過' if report['pilot_validation']['policy_grasp_passed'] is True else '未通過' if report['pilot_validation']['policy_grasp_passed'] is False else '待驗證'}；來源運動失敗幀={report['pilot_validation']['failed_source_frames']}；接觸檢查={'未通過' if report['pilot_validation']['contact_validation_failed'] is True else '通過' if report['pilot_validation']['contact_validation_failed'] is False else '待驗證'}。" if report.get('pilot_validation') else ''),
         (f"本輪沿用 {report['pilot_validation']['actor_transfer_source_steps']:,} steps 舊模型的 actor；新增訓練 steps 另計，critic 與 optimizer 重新初始化。" if report.get('pilot_validation',{}).get('actor_transfer_source_steps') else ''),
         f"阻塞：{str(report['blocking_failure'] or '目前沒有新的執行錯誤。')[-1600:]}",

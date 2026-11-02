@@ -103,13 +103,17 @@ def metric(root,cfg):
 def generic_reconstruction(root,cfg):
     rec=root/'reconstruction';count=cfg['frames'];names=cfg['objects'];ext=cfg.get('frame_cache_format','png')
     (rec/'object_poses').mkdir(exist_ok=True)
-    run([PY,str(BASE/'batch_scene.py'),'--run',str(root),'--stage','assets'],root/'logs/prepare-assets.log')
+    if cfg.get('own_geometry_required'):
+        from own_geometry import build as build_own_geometry
+        geometry=build_own_geometry(root,cfg)
+    else:
+        run([PY,str(BASE/'batch_scene.py'),'--run',str(root),'--stage','assets'],root/'logs/prepare-assets.log')
     if not (rec/'table-initial-plane.npz').exists():run([PY,str(BASE/'batch_scene.py'),'--run',str(root),'--stage','plane'],root/'logs/initial-table-plane.log')
     def write(name,s):
         s=s.replace('episode_000005',cfg['sequence']);s=re.sub(r'\b288\b',str(count),s)
         if ext=='jpg':s=s.replace('frames/{i:06d}.png','frames/{i:06d}.jpg').replace('frames/000000.png','frames/000000.jpg')
         (root/'scripts'/name).write_text(s)
-    if 'wooden_spoon' in names and not (rec/'spoon-asset-reconstruction.json').exists():
+    if not cfg.get('own_geometry_required') and 'wooden_spoon' in names and not (rec/'spoon-asset-reconstruction.json').exists():
         s=(PRIOR/'scripts/reconstruct_spoon_asset.py').read_text().replace('for b in [1,2]',f'for b in range(1,{len(names)+1})').replace('masks[1]',f"masks[{names.index('wooden_spoon')}]")
         write('reconstruct_spoon_asset.py',s);run([PY,str(root/'scripts/reconstruct_spoon_asset.py')],root/'logs/reconstruct_spoon_asset.log')
     if not (rec/f'slam/poses/{count-1:06d}.json').exists():
@@ -131,11 +135,14 @@ def generic_reconstruction(root,cfg):
         if (rec/f'object_poses/{name}/{count-1:06d}.json').exists():continue
         args=json.loads((PRIOR/'research/pot-poses-command.json').read_text())[1:]
         args=[s.replace(str(PRIOR),str(root)).replace('/masks/1',f'/masks/{b+1}').replace('white_pot',name) for s in args]
+        if cfg.get('own_geometry_required'):
+            args[args.index('--depth_folder')+1]='/episode/reconstruction/depth_foundation_stereo'
+            args[args.index('--reference_frame')+1]=str(geometry['objects'][name]['reference_frame'])
         shutil.copy2(BASE/'batch_pose_memory.py',root/'scripts/pose_memory.py')
         index=args.index('-m');args[index:index+2]=['/episode/scripts/pose_memory.py']
         args+=['--reregister_iou_thresh','0.45']
         docker(args,root/f'logs/poses-{name}.log')
-    print(cfg['sequence'],'camera and public-asset poses ready',flush=True)
+    print(cfg['sequence'],'camera and own reconstructed object poses ready' if cfg.get('own_geometry_required') else 'camera and public-asset poses ready',flush=True)
     if not (rec/'scene_motion_physical.npz').exists():run([PY,str(BASE/'batch_generic_finish.py'),'--run',str(root)],root/'logs/generic-scene-refinement.log')
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--episode',type=int,required=True);p.add_argument('--stage',choices=['prepare','metric','pot_spoon','metric_pot_spoon','generic'],required=True);a=p.parse_args();root,cfg=context(a.episode)

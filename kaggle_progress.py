@@ -13,6 +13,13 @@ def receipt_scores(path):
     try:receipt=json.loads(Path(path).read_text())
     except (OSError,ValueError):return {}
     if not receipt:return {}
+    live={}
+    for parent in Path(path).resolve().parents:
+        cache=parent/'kaggle-live-status.json'
+        if cache.is_file():
+            try:live=json.loads(cache.read_text())
+            except (OSError,ValueError):pass
+            break
     rows=[]
     for key,name,direction,unit in METRICS:
         item=receipt.get('submissions',{}).get(key,{})
@@ -20,10 +27,20 @@ def receipt_scores(path):
             score=float(item['public_score'])
             if not math.isfinite(score):score=None
         except (KeyError,TypeError,ValueError):score=None
+        status=item.get('state','PENDING');error=None;verified=False
+        current=live.get('metrics',{}).get(key,{})
+        matched=next((s for s in current.get('submissions',[]) if str(s.get('ref'))==str(item.get('ref'))),None)
+        if matched:
+            status=matched.get('state','UNKNOWN');error=matched.get('error');verified=True
+            try:score=float(matched['public_score']) if status=='COMPLETE' else None
+            except (KeyError,ValueError,TypeError):score=None
+            if score is not None and not math.isfinite(score):score=None
         rows.append(dict(metric=key,name=name,direction=direction,unit=unit,score=score,
-            status=item.get('state','PENDING'),submission_id=item.get('ref'),
+            status=status,submission_id=item.get('ref'),error=error,live_verified=verified,
             url='https://www.kaggle.com/competitions/'+item['slug'] if item.get('slug') else None))
     return dict(completed=sum(r['status']=='COMPLETE' and r['score'] is not None for r in rows),
+                invalidated=sum('invalidated' in (r['error'] or '') for r in rows),
+                live_checked_utc=live.get('checked_utc'),
                 total=6,metrics=rows,receipt=str(path),counts_as_strict_episode_completion=False)
 
 
@@ -47,9 +64,21 @@ def compare_receipts(baseline,candidate):
 
 def latest_comparison(batch):
     batch=Path(batch);baseline=batch/'official_submission_20261102/original20.kaggle-receipt.json'
+    status=batch/'focused_episodes_20261028/own-submission-status.json'
+    try:own=json.loads(status.read_text())
+    except (OSError,ValueError):own={}
+    if own.get('receipt') and Path(own['receipt']).is_file():
+        return dict(compare_receipts(baseline,own['receipt']),label='Own reconstruction cohort; invalid baseline is not comparable')
     candidates=[('Mesh precision',batch/'mesh_precision_candidate_20261102/mesh-precision.kaggle-receipt.json'),
                 ('Episode 19 policy',batch/'policy_motion_candidate_20261102/policy-motion.kaggle-receipt.json'),
                 ('Combined motion and geometry',batch/'combined_precision_motion_20261102/combined.kaggle-receipt.json')]
     for label,path in reversed(candidates):
         if path.is_file():return dict(compare_receipts(baseline,path),label=label)
     return {}
+
+
+def current_scores(batch):
+    batch=Path(batch)
+    try:status=json.loads((batch/'focused_episodes_20261028/own-submission-status.json').read_text())
+    except (OSError,ValueError):status={}
+    return receipt_scores(status.get('receipt') or batch/'official_submission_20261102/original20.kaggle-receipt.json')
