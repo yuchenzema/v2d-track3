@@ -49,6 +49,20 @@ def diverse_pose_seeds(candidates, maximum=4):
     return selected
 
 
+def source_centroid_cost(render,target_center_xy):
+    """Guide optimization toward the unchanged pixel-centroid gate.
+
+    Zero inside the existing strict tolerance; bounded outside it so this term
+    cannot replace silhouette, depth, marker, or temporal evidence.
+    """
+    if target_center_xy is None:return 0.
+    y,x=np.where(render)
+    if not len(x):return 1.
+    error=2*float(np.linalg.norm(np.array([x.mean(),y.mean()])-target_center_xy))
+    excess=max(0.,error/LIMITS['maximum_centroid_error_px']-1.)
+    return min(1.,.04*excess**2)
+
+
 def save_trajectory(path, motion):
     """Keep the previous resumable trajectory if writing is interrupted."""
     temporary=None
@@ -374,6 +388,8 @@ def fit(source, root, maxfev=100, repair_only=False):
             # nearby, unrelated image circle onto a CAD marker identity.
             observations=[];good=[];xyz=[];uv=[]
             target_visible=target & valid; distance=distance_transform_edt(~target_visible)
+            target_y,target_x=np.where(target_visible)
+            target_center_xy=np.array([target_x.mean(),target_y.mean()]) if len(target_x) else None
             def sphere_error(M):
                 return float(np.median(np.linalg.norm(marker_residual(M,xyz,uv,intr),axis=1))) if xyz else None
             def quality(M):
@@ -391,7 +407,8 @@ def fit(source, root, maxfev=100, repair_only=False):
                 if photo is not None:
                     if surface is None:surface=renderer.depth(M)
                     photo_loss=.03*photo.residual(M,image_rgb,intr,surface,target_visible)[0]
-                return (1-iou+.005*outside+depth_loss+photo_loss
+                center_loss=source_centroid_cost(render,target_center_xy) if cfg.get('validated_video_pipeline') else 0.
+                return (1-iou+.005*outside+depth_loss+photo_loss+center_loss
                     +(.06*float(np.sqrt(1+(sphere/3)**2)-1) if sphere is not None else 0.)
                     +feature_pose_penalty(M,feature,intr,independent_markers))
             def selection_quality(M):
