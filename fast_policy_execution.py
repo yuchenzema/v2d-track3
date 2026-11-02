@@ -39,6 +39,9 @@ def install_source(root,source):
         require_nonpenetrating_reference_before_training=False,grasp_search_require_nonpenetrating_initial_pose=False,
         requires_strict_source_match_for_publication=False,requires_no_penetration_for_publication=False,
         own_training_continuation_allowed=False,strict_completion_granted=False)
+    trained=any((root/'flash_chord_coherent_actor_transfer').glob('*.safetensors'))
+    saved=root/'coherent-training-config.json'
+    cfg['training_world_count']=(json.loads(saved.read_text())['scene']['world_count'] if trained and saved.exists() else 64)
     save(root/'episode-config.json',cfg)
     validate(root)
     save(root/'research/fast-source-provenance.json',dict(updated_utc=utc(),
@@ -51,11 +54,11 @@ def install_source(root,source):
 def training_script(episode,seed):
     """Use the existing fresh learner with the same zero-assistance source clock."""
     text=(BASE/'fresh_improvement_training.py').read_text()
-    text=text.replace('scene.world_count=1024','scene.world_count=512')
+    text=text.replace('scene.world_count=1024','scene.world_count=64')
     text=text.replace('training.compute_dtype=bfloat16','training.compute_dtype=float32')
     text=text.replace("'sim.njmax=1536'","'sim.nconmax=2048','sim.njmax=4096'")
     text=text.replace("'reset.seed=43'",f"'reset.seed={seed}'")
-    text=text.replace("'world_count': 1024","'world_count': 512").replace("'seed': 43",f"'seed': {seed}")
+    text=text.replace("'world_count': 1024","'world_count': 64").replace("'seed': 43",f"'seed': {seed}")
     text=text.replace("install_training_fingers(native['main'].__wrapped__.__globals__)","install_training_fingers(native['main'].__wrapped__.__globals__,focus=episode.get('training_focus'))")
     # Native supported scene option: contacts remain enabled, but the own mesh
     # uses its single convex hull rather than expensive concavity decomposition.
@@ -71,7 +74,7 @@ def reset_untrained_setup(root):
     root=Path(root);manifest=root/'coherent-input-checksums.json'
     if not manifest.exists():return False
     config=json.loads((root/'coherent-training-config.json').read_text())
-    if config.get('scene',{}).get('decompose_objects') is False:return False
+    if config.get('scene',{}).get('decompose_objects') is False and config['scene'].get('world_count')==64:return False
     folder=root/'flash_chord_coherent_actor_transfer'
     if list(folder.glob('*.safetensors')) or (folder/'TRAINING_COMPLETED').exists():return False
     metrics=folder/'metrics.jsonl'
@@ -80,13 +83,13 @@ def reset_untrained_setup(root):
             if json.loads(line).get('environment_steps',0)>0:return False
     for name,expected in json.loads(manifest.read_text()).items():
         assert digest(root/name)==expected,'Untrained reference changed before physics setup'
-    history=root/'research/pretraining-setup-history'/digest(manifest)[:16];history.mkdir(parents=True,exist_ok=True)
+    history=root/'research/pretraining-setup-history'/(digest(manifest)[:12]+'-'+digest(root/'coherent-training-config.json')[:12]);history.mkdir(parents=True,exist_ok=True)
     for name in ['coherent-input-checksums.json','coherent-training-config.json','coherent-training-provenance.json']:
         path=root/name
         if path.exists():path.rename(history/name)
     shutil.copy2(root/'scripts/train_coherent_actor_transfer.py',history/'train_coherent_actor_transfer.py')
     save(history/'reason.json',dict(updated_utc=utc(),actual_training_steps=0,
-        checkpoint_existed=False,reason='Replace expensive pretraining CoACD setup with supported native convex-hull contacts'))
+        checkpoint_existed=False,reason='Use native convex-hull contacts and 64 worlds before any learning; preserve preceding setup attempts'))
     return True
 
 
