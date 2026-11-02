@@ -35,3 +35,18 @@ an exemption from the unchanged final source-motion and contact tests.
 
 The existing serial controller performs the new experiment. No parallel episode
 worker, additional scheduled model call or new task is created.
+
+Completed g007 result: 1,280,000 new steps; full recorded grasp displacement
+0.23020 m for a 0.24394 m source target. The selected whole checkpoint still
+fails acceptance (maximum position discrepancy 0.07857 m and contact failures).
+The native reference cohort's mean position/orientation errors are 0.03667 m /
+0.17426 rad; these are not held-out Kaggle results. No new episode is complete.
+
+Subsequent initialization retains the entire g007 actor only when its checkpoint
+hash agrees across the final metrics, strict report and actual learned grasp
+report, all source frames were checked, mean local position error is below 5 cm,
+and every grasp's real displacement reaches at least 75% of its source target.
+This excludes static proxy improvements. Passing these seed-selection conditions
+does not pass any final quality gate. Its original 90,000,384-step ancestor and
+its own 1,280,000-step counter are recorded separately. Every new learner still
+uses fresh critics/optimizers and begins its additional-training counter at zero.

@@ -19,12 +19,35 @@ def metadata(path):
 def recipe(episode,base):
     if episode!=38:return None
     checkpoint=Path(base)/'runs/episode_000038_newton_batch_20261015/flash_chord_coherent_actor_transfer/policy_90000384.safetensors'
+    parent=Path(base)/'runs/episode_000038_newton_human_match_20261023_g007'
+    selected_from=None
+    try:
+        strict=json.loads((parent/'research/strict-human-match.json').read_text())
+        metrics=json.loads((parent/'evaluation/final-metrics.json').read_text())
+        grasp=strict['post_training_grasp_acceptance'];candidate=parent/metrics['checkpoint'].removeprefix('/episode/')
+        sha=hashlib.sha256(candidate.read_bytes()).hexdigest()
+        moving=bool(grasp.get('grasps')) and all(g['expected_motion_m']>.015 and
+            g['actual_motion_m']>=.75*g['expected_motion_m'] for g in grasp['grasps'])
+        # Choose an entire measured actor, never a successful rollout segment.
+        # Eligibility to initialize another experiment is not episode acceptance.
+        if (strict.get('all_frames_checked') is True and grasp.get('policy_inference') is True
+                and grasp.get('source_frames_checked')==strict.get('source_frames')
+                and metrics['checkpoint_sha256']==sha==strict['checkpoint_sha256']==grasp['checkpoint_sha256']
+                and metrics['metrics']['object_position_error_m']<.05 and moving):
+            selected_from=dict(ancestor_checkpoint=str(checkpoint),
+                ancestor_checkpoint_sha256=hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
+                ancestor_environment_steps=90000384,source_quality_is_local_not_kaggle=True,
+                source_episode_strictly_passed=False)
+            checkpoint=candidate
+    except (OSError,KeyError,TypeError,ValueError):pass
     info=metadata(checkpoint)
     assert info['user.checkpoint_kind']=='policy' and info['user.algorithm']=='flash_sac'
-    return dict(source_checkpoint=str(checkpoint),source_checkpoint_sha256=hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
+    result=dict(source_checkpoint=str(checkpoint),source_checkpoint_sha256=hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
         source_environment_steps=int(info['user.environment_steps']),
         components=['actor.params','actor.batch_stats'],fresh_critics=True,fresh_optimizer=True,
         preserve_source_actor_action_semantics=True,training_counter_starts_at_zero=True)
+    if selected_from:result.update(selected_from)
+    return result
 
 
 def configure(config,description):
