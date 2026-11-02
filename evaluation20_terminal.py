@@ -76,6 +76,7 @@ def pilot_validation(out):
            and grasp.get('official_trajectory_sha256')==strict.get('official_render_binding',{}).get('official_trajectory_sha256'))
     return dict(episode=cfg.get('episode'),run=str(run),status=experiment.get('status'),
         training_steps=recorded_steps(run) or 0,
+        actor_transfer_source_steps=(cfg.get('actor_transfer') or {}).get('source_environment_steps'),
         training_finished=(run/'flash_chord_coherent_actor_transfer/TRAINING_COMPLETED').exists(),
         policy_grasp_passed=grasp.get('all_grasps_passed') if bound else None,
         contact_validation_failed=strict.get('contact_validation_failed'),
@@ -243,6 +244,7 @@ def render(report):
          else f"目前沒有 policy 在訓練；此 run 已記錄訓練 steps={report['training_steps'] or 0}。"),
         '已記錄的實驗訓練：'+(', '.join(f"episode {ep}={steps:,} steps" for ep,steps in report.get('recorded_training_steps_by_episode',{}).items()) or '尚無；品質驗收另計。'),
         (f"最新實驗 episode {report['pilot_validation']['episode']}：訓練 {'完成' if report['pilot_validation']['training_finished'] else '尚未完成'}；policy 抓取={'通過' if report['pilot_validation']['policy_grasp_passed'] is True else '未通過' if report['pilot_validation']['policy_grasp_passed'] is False else '待驗證'}；來源運動失敗幀={report['pilot_validation']['failed_source_frames']}；接觸檢查={'未通過' if report['pilot_validation']['contact_validation_failed'] is True else '通過' if report['pilot_validation']['contact_validation_failed'] is False else '待驗證'}。" if report.get('pilot_validation') else ''),
+        (f"本輪沿用 {report['pilot_validation']['actor_transfer_source_steps']:,} steps 舊模型的 actor；新增訓練 steps 另計，critic 與 optimizer 重新初始化。" if report.get('pilot_validation',{}).get('actor_transfer_source_steps') else ''),
         f"阻塞：{str(report['blocking_failure'] or '目前沒有新的執行錯誤。')[-1600:]}",
         f"GUI http://localhost:8768；健康狀態={report['health']}；public 已排除。",
     ])

@@ -40,6 +40,13 @@ class Metrics:
 
 original_run = runner.run_training
 def run(*args, **kwargs):
+    restore_factory=None
+    if episode.get('actor_transfer') and not saved:
+        from actor_transfer_training import install as install_actor_transfer
+        restore_factory=install_actor_transfer(runner,episode['actor_transfer'],kwargs['checkpoint_metadata'],ROOT)
+        kwargs['checkpoint_metadata']=dict(kwargs['checkpoint_metadata'],
+            actor_transfer_source_sha256=episode['actor_transfer']['source_checkpoint_sha256'],
+            actor_transfer_source_environment_steps=str(episode['actor_transfer']['source_environment_steps']))
     if episode.get('training_curriculum')=='fresh_rebuild':
         import numpy as np
         environment=args[0] if args else kwargs['env'];e=environment.env
@@ -57,6 +64,7 @@ def run(*args, **kwargs):
         return original_run(*args, **kwargs)
     finally:
         sink.close()
+        if restore_factory is not None:runner.create_learner=restore_factory
 runner.run_training = run
 sys.argv = [sys.argv[0], 'experiment=sharpa_flash_sac', f"task.parquet='{reference}'",
             'task.motion_speed=0.5', f"sim.substeps={episode.get('physics_substeps',5)}",
@@ -109,6 +117,9 @@ def main(cfg):
         cfg.task.motion_speed=1.
         cfg.task.source_frame_playback=True
         assert cfg.env.voc.max_force==0. and cfg.env.voc.max_torque==0. and cfg.env.voc_scale==0.
+    if episode.get('actor_transfer'):
+        from actor_transfer_training import configure as configure_actor_transfer
+        configure_actor_transfer(cfg,episode['actor_transfer'])
     first = OmegaConf.to_container(cfg.curriculum.stages[0], resolve=True)
     stages = []
     schedule=([(0.,.35),(0.,.5),(0.,.65),(0.,.8),(0.,.9),(0.,.95)] if episode.get('training_curriculum')=='fresh_rebuild' else
@@ -140,6 +151,12 @@ def main(cfg):
                           wrist_residual_limit_m=.015,finger_residual_limit_rad=.08,
                           public_validation_manifest=episode.get('public_validation_manifest'),
                           time_advance_frames=episode.get('time_advance_frames',0.),motion_speed=1.,source_frame_playback=True)
+    if episode.get('actor_transfer'):
+        provenance.update(initialization='Preserved same-episode actor and batch statistics; fresh critics, target critics, optimizers, replay and reward normalizer',
+                          actor_transfer=episode['actor_transfer'],initial_mean_head=cfg.training.network.residual_mean_head,
+                          prior_counter=0,old_actor_reused=True,preferred_prior_policy=episode['actor_transfer']['source_checkpoint'],
+                          actual_action_config=OmegaConf.to_container(cfg.action,resolve=True))
+        provenance.pop('wrist_residual_limit_m',None);provenance.pop('finger_residual_limit_rad',None)
     (ROOT/'coherent-training-config.json').write_text(json.dumps(OmegaConf.to_container(cfg,resolve=True),indent=2))
     (ROOT/'coherent-training-provenance.json').write_text(json.dumps(provenance,indent=2))
     files = [ROOT/'reconstruction/scene_motion_physical.npz', Path(reference)/'motion.parquet',
@@ -147,6 +164,7 @@ def main(cfg):
              *sorted((ROOT/'reconstruction/mesh_priors').glob('*.ply')),
              *sorted((ROOT/'reconstruction/mesh_priors').glob('*.obj')),
              *sorted((Path(reference).parents[2]/'reconstructed_stage').glob('*.usda'))]
+    if episode.get('actor_transfer'):files.append(Path(episode['actor_transfer']['checkpoint']))
     previous = ROOT/'coherent-input-checksums.json'
     if previous.exists():
         for name, expected in json.loads(previous.read_text()).items():
@@ -162,4 +180,4 @@ def main(cfg):
 
 main()
 if os.environ.get('V2D_VALIDATE_CONFIG_ONLY') != '1':
-    (ROOT/'flash_chord_coherent_actor_transfer/TRAINING_COMPLETED').write_text('Independent fresh improvement experiment completed.\n')
+    (ROOT/'flash_chord_coherent_actor_transfer/TRAINING_COMPLETED').write_text('Actor-transfer improvement experiment completed.\n' if episode.get('actor_transfer') else 'Independent fresh improvement experiment completed.\n')

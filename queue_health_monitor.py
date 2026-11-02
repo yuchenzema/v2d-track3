@@ -75,6 +75,12 @@ def recovery_decision(service, paused, done, owned_process_alive):
             and not owned_process_alive)
 
 
+def source_alignment_idle_problem(state,owned,paused):
+    if not paused and not owned and state.get('status')=='source_alignment_repairs_required':
+        return 'No episode worker is active: existing source-alignment repairs are exhausted; a verified algorithm/source repair is required.'
+    return None
+
+
 def public_validation_health(validation,owned,paused=False):
     """Distinguish a live service from a public pipeline that cannot advance."""
     if paused:return 'paused_by_user',None
@@ -175,6 +181,8 @@ def main():
     ram = available_ram_bytes()
     disk = shutil.disk_usage(BASE).free
     alerts = []
+    idle_problem=source_alignment_idle_problem(state,owned,paused)
+    if idle_problem:alerts.append(idle_problem)
     if invalid_claims:
         alerts.append('Completion claims lack strict evidence for episodes: '+', '.join(map(str,invalid_claims)))
     if coverage != EXPECTED:

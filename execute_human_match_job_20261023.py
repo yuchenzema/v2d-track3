@@ -87,6 +87,12 @@ def prepare():
         cfg.update(experimental_training=True,experimental_only=True,
                    experimental_admission=job['experimental_admission'],
                    strict_completion_granted=False)
+    if job.get('actor_transfer'):
+        transfer=dict(job['actor_transfer']);seed=root/'transfer_seed/policy.safetensors'
+        seed.parent.mkdir(exist_ok=True);shutil.copy2(transfer['source_checkpoint'],seed)
+        assert digest(seed)==transfer['source_checkpoint_sha256'],'Actor-transfer source changed'
+        transfer['checkpoint']='/episode/transfer_seed/policy.safetensors'
+        cfg['actor_transfer']=transfer
     cfg['require_nonpenetrating_reference_before_training']=True
     cfg['grasp_search_require_nonpenetrating_initial_pose']=True
     options=job.get('worst_windows') or [{'start':0,'end':min(cfg['frames']-1,50)}]
@@ -115,7 +121,8 @@ def prepare():
         save(root/'research/source-video-review.json',{'frame_count':cfg['frames'],'grasps':cfg['grasps'],'phases':legacy['phases'],'all_frames_visually_reviewed':False})
     shutil.copy2(recsource/'reconstruction/sam2_prompts.json',root/'reconstruction/sam2_prompts.json')
     save(root/'research/rebuild-input-provenance.json',{'updated_utc':utc(),'source_videos':[{'path':str(BASE/f'datasets/video_to_data_challenge/track_3/evaluation/videos/chunk-000/observation.images.ego_cam_{cam}/episode_{ep:06d}.mp4'),'sha256':digest(BASE/f'datasets/video_to_data_challenge/track_3/evaluation/videos/chunk-000/observation.images.ego_cam_{cam}/episode_{ep:06d}.mp4')} for cam in 'abc'],
-         'old_estimated_camera_object_hand_poses_copied':False,'old_masks_or_depth_copied':False,'old_policy_or_optimizer_copied':False,'trigger':job})
+         'old_estimated_camera_object_hand_poses_copied':False,'old_masks_or_depth_copied':False,
+         'old_actor_checkpoint_copied':bool(job.get('actor_transfer')),'old_optimizer_copied':False,'trigger':job})
     manifest=source/'deliverables/manifest.json'
     entries=json.loads(manifest.read_text()) if manifest.exists() else {}
     standard=bool(entries) and isinstance(entries,dict) and all(isinstance(entry,dict) and 'path' in entry and 'sha256' in entry for entry in entries.values())

@@ -12,17 +12,25 @@ def native_body_id(lookup,name):
     return matches.pop()
 
 
-def gravity_cone_feasible(normals,positions,friction,mass,center,gravity=(0.,0.,-9.81),normal_limit_N=25.):
+def gravity_cone_solution(normals,positions,friction,mass,center,gravity=(0.,0.,-9.81),normal_limit_N=25.):
+    """Return the bounded contact forces, rather than only an existence claim."""
     normals=np.asarray(normals,float).reshape(-1,3);positions=np.asarray(positions,float).reshape(-1,3)
-    if not len(normals) or mass<=0:return False
+    if not len(normals) or mass<=0:return None
     columns=[]
     for normal,point,mu in zip(normals,positions,friction):
         length=np.linalg.norm(normal)
-        if length<.5:return False
+        if length<.5:return None
         normal=normal/length;tangent=np.eye(3)[np.argmin(np.abs(normal))];tangent-=normal*np.dot(tangent,normal);tangent/=np.linalg.norm(tangent)
         second=np.cross(normal,tangent)
         for force in [normal+mu*tangent,normal-mu*tangent,normal+mu*second,normal-mu*second]:
             columns.append(np.r_[force,np.cross(point-np.asarray(center),force)/.1])
     A=np.array(columns).T;b=np.r_[-float(mass)*np.asarray(gravity),np.zeros(3)]
     result=linprog(np.ones(A.shape[1]),A_eq=A,b_eq=b,A_ub=np.kron(np.eye(len(normals)),np.ones((1,4))),b_ub=np.full(len(normals),normal_limit_N),bounds=(0,None),method='highs')
-    return bool(result.success and np.max(np.abs(A@result.x-b))<1e-5)
+    if not result.success or np.max(np.abs(A@result.x-b))>=1e-5:return None
+    forces=np.asarray([A[:3,4*i:4*i+4]@result.x[4*i:4*i+4] for i in range(len(normals))])
+    return dict(forces_N=forces,normal_loads_N=result.x.reshape(-1,4).sum(axis=1),
+                maximum_balance_residual=float(np.max(np.abs(A@result.x-b))))
+
+
+def gravity_cone_feasible(normals,positions,friction,mass,center,gravity=(0.,0.,-9.81),normal_limit_N=25.):
+    return gravity_cone_solution(normals,positions,friction,mass,center,gravity,normal_limit_N) is not None

@@ -14,6 +14,13 @@ from queue_health_monitor import age, latest_metric, recovery_decision
 
 
 class QueueHealthTests(unittest.TestCase):
+    def test_exhausted_idle_alignment_is_not_healthy_progress(self):
+        state=dict(status='source_alignment_repairs_required')
+        self.assertIn('No episode worker',monitor.source_alignment_idle_problem(state,False,False))
+        self.assertIsNone(monitor.source_alignment_idle_problem(state,True,False))
+        self.assertIsNone(monitor.source_alignment_idle_problem(state,False,True))
+        self.assertIsNone(monitor.source_alignment_idle_problem(dict(status='experimental_policy_training'),False,False))
+
     def test_frontend_revision_is_applied_at_the_locked_boundary_before_restart(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);(root/'controller-reload-request.json').write_text(json.dumps(dict(pending=True,frontend_revisions={'24':'_review4'})))

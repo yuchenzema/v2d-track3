@@ -1,0 +1,37 @@
+Episode 38 source-aligned improvement, 2026-11-02
+
+g006 completed 1,280,000 new environment steps but failed its real learned-policy
+grasp: required source displacement 0.24394 m, achieved 0.00657 m. All 263 source
+frames remain strict failures; maximum replay penetration was 0.00435 m. This
+experiment is not a successful episode or a replacement Kaggle submission.
+
+Serial native diagnostics kept its six frozen input files unchanged. Increasing
+finger command limits through 2 rad and testing finger proportional gains 10/40
+did not pass unassisted hold/lift. These diagnostic controller changes are
+rejected for production. The geometry gravity-cone solution needs large contact
+loads and is insufficient evidence of an executable grip.
+
+The preserved episode-38 90,000,384-step actor was also evaluated with a declared
+new-reference/unit-source-clock diagnostic. Native policy schema validation was
+retained. Its whole-trajectory object displacement was 0.05789 m, versus about
+0.00657 m for g006, but it still failed reference tracking (mean position error
+0.08312 m). This diagnostic is not an official submission or a Kaggle score.
+
+The next isolated serial experiment warm-starts only that actor's parameters
+and batch statistics. Critics, target critics, all optimizers, replay and reward
+normalizer start fresh; the new training counter starts at zero. The old actor's
+90,000,384 steps are reported separately and its immutable checkpoint is hashed.
+Its action mapping and actor architecture are preserved and native policy schema
+checks are mandatory; no checkpoint metadata or schema is rewritten to force a
+match. The new checkpoint records its actual new reference, source clock,
+physics and action configuration. Old checkpoints and g006 remain unchanged.
+
+This deliberately tests actor transfer after independent fresh actors repeatedly
+failed. It does not relax source admission, reference nonpenetration, object
+assistance, post-training grasp, motion/contact validation or strict completion.
+Pilot training remains bounded to 1,280,000 new steps. The old actor's larger
+motor residual range is part of the declared transferred control recipe, not
+an exemption from the unchanged final source-motion and contact tests.
+
+The existing serial controller performs the new experiment. No parallel episode
+worker, additional scheduled model call or new task is created.

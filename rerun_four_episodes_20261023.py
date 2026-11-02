@@ -102,7 +102,7 @@ def rebuild(ep):
  status(ep,'Fitting hand contacts across every reconstructed source frame')
  command(r,[PY,BASE/'fit_full_trajectory_contacts_20261023.py','--run',r],'full-trajectory-contact-fit')
  cfg=json.loads((r/'episode-config.json').read_text());cfg['reference_review_pending']=False;save(r/'episode-config.json',cfg)
- save(done,{'completed_utc':utc(),'all_vision_stages_rerun':True,'source_frames':cfg['frames'],'retarget_rebuilt':True,'old_policy_reused':False,'reference':'track3_collision_variant','collision_report':'evaluation/track3_collision_variant-collision-audit.json'})
+ save(done,{'completed_utc':utc(),'all_vision_stages_rerun':True,'source_frames':cfg['frames'],'retarget_rebuilt':True,'old_actor_transfer_planned':bool(cfg.get('actor_transfer')),'reference':'track3_collision_variant','collision_report':'evaluation/track3_collision_variant-collision-audit.json'})
  status(ep,'Fresh reconstruction and retargeting completed; queued for independent training',state='queued',training_started=False)
 
 def train_and_export(ep):
@@ -136,6 +136,7 @@ def train_and_export(ep):
   save(r/'episode-config.json',cfg)
  if not (r/'coherent-input-checksums.json').exists():
   shutil.copy2(BASE/'legacy_source_frame_playback.py',r/'scripts/legacy_source_frame_playback.py')
+  shutil.copy2(BASE/'actor_transfer_training.py',r/'scripts/actor_transfer_training.py')
   s=(BASE/'fresh_improvement_training.py').read_text().replace('BUDGET = 50_000_896',"BUDGET = int(episode['training_budget'])").replace('scene.world_count=1024','scene.world_count=512').replace('training.compute_dtype=bfloat16','training.compute_dtype=float32').replace('training.checkpoint.save_interval_environment_steps=10000000','training.checkpoint.save_interval_environment_steps=10000000').replace("'sim.njmax=1536'","'sim.nconmax=2048','sim.njmax=4096'").replace("'reset.seed=43'",f"'reset.seed={20261023+ep}'")
   s=s.replace("    first = OmegaConf.to_container(cfg.curriculum.stages[0], resolve=True)","    from flash_chord.embodiments.sharpa_hands import SharpaHandsConfig\n    from omegaconf import open_dict\n    overrides=dict(SharpaHandsConfig().joint_overrides)\n    overrides[r'wrist_[xyz]$']={**overrides[r'wrist_[xyz]$'],**episode['wrist_motor_profile']}\n    with open_dict(cfg.embodiment.config):cfg.embodiment.config.joint_overrides=overrides\n    first = OmegaConf.to_container(cfg.curriculum.stages[0], resolve=True)")
   s=s.replace("'baseline_inputs_copied_without_pose_or_geometry_edits': True","'baseline_inputs_copied_without_pose_or_geometry_edits': False, 'reconstruction_rerun_from_original_video': True")

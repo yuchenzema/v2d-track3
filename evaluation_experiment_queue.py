@@ -21,7 +21,7 @@ def execution_inputs():
         'fit_full_trajectory_contacts_20261023.py','optimize_native_grasps.py','native_pinch_contacts.py',
         'apply_collision_transitions.py','rigid_pose_collision_audit.py',
         'approach_grasp_probe.py','grasp_physics_checks.py',
-        'legacy_source_frame_playback.py','fresh_improvement_training.py','grasp_training_admission.py',
+        'legacy_source_frame_playback.py','fresh_improvement_training.py','actor_transfer_training.py','grasp_training_admission.py',
         'batch_export.py','batch_generic_retarget.py','evaluate_reference_controller.py','official_policy_suite.py',
         'export_reference_diagnostics.py','thorough_episode_recheck.py','audit_rebuilt_rollout_20261023.py']}
 
@@ -132,6 +132,9 @@ def run(out,focus):
         if prior.get('episode')==ep and prior.get('source_version')==report['trajectory_sha256']:
             request=prior_request;job=prior;generation=job['generation']
     job.update(source_run=str(source),baseline_run=str(source))
+    from actor_transfer_training import recipe as actor_recipe
+    transfer=actor_recipe(ep,BASE)
+    if transfer:job['actor_transfer']=transfer
     job['execution_input_hashes']=execution_inputs()
     save(request,job)
     run_root=BASE/f'runs/episode_{ep:06d}_newton_human_match_20261023_g{generation:03d}'
