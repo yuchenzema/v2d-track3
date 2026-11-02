@@ -655,7 +655,8 @@ def collect():
             experimental_ep=experimental_job['episode']
             hero=f"Evaluation {experimental_ep:06d} experimental pilot: {human_match_loop.get('phase','physical reference preparation')}. Not strict completion."
             if human_match_loop.get('status')=='experimental_policy_training':
-                steps=queue_health.get('environment_steps')
+                from evaluation20_terminal import recorded_steps
+                steps=recorded_steps(experimental_job['run'])
                 hero=f"Evaluation {experimental_ep:06d}: experimental FlashSAC training, {steps if steps is not None else 'initializing'} environment steps. Strict episode completion remains gated."
                 if (Path(experimental_job['run'])/'flash_chord_coherent_actor_transfer/TRAINING_COMPLETED').exists():
                     hero=f"Evaluation {experimental_ep:06d}: pilot training finished; validating checkpoints and policy rollouts. Strict completion remains gated."
