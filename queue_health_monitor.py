@@ -207,6 +207,9 @@ def main():
         alerts.append(public_problem)
     actions = []
     experimental=read(OUT/'experimental-training-status.json',{})
+    replay=read(OUT/'submission-replay-status.json',{})
+    if replay.get('status')=='blocked':
+        alerts.append('Official policy replay is blocked; see '+str(replay.get('failure_log','submission-replay-status.json')))
     if experimental.get('status')=='pilot_blocked':
         detail=str(experimental.get('failure_summary') or experimental.get('latest_failure') or 'See pilot logs').strip().splitlines()[-1]
         alerts.append('Experimental policy preparation is blocked: '+detail)

@@ -24,6 +24,8 @@ class SubmissionReplayTests(unittest.TestCase):
         self.assertIn('/source:/episode:ro',command)
         self.assertIn('/policy:/checkpoint/policy.safetensors:ro',command)
         self.assertIn('--network none',command)
+        self.assertIn('/runtime-cache/geometry:/workspace/src/flash_chord/assets/.cache',command)
+        self.assertIn('/runtime-cache/user:/root/.cache',command)
         self.assertIn('evaluation.world_count=1',command)
         self.assertNotIn('train_coherent_actor_transfer',command)
         self.assertNotIn('evaluation.motion_end_frame',command)

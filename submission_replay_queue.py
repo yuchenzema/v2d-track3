@@ -64,6 +64,8 @@ def docker_command(root,checkpoint,kit,runtime,output,ep):
           '--name',f'v2d-official-submission-episode{ep}',
           '-v',f'{root}:/episode:ro','-v',f'{checkpoint}:/checkpoint/policy.safetensors:ro',
           '-v',f'{kit}:/official-kit:ro','-v',f'{runtime}:/workspace:ro',
+          '-v',f'{Path(output).parent}/runtime-cache/geometry:/workspace/src/flash_chord/assets/.cache',
+          '-v',f'{Path(output).parent}/runtime-cache/user:/root/.cache',
           '-v',f'{assets}:/v2d/assets:ro','-v',f'{prior}:/prior:ro',
           '-v',f'{output}:/submission-output',
           '-e','XLA_PYTHON_CLIENT_PREALLOCATE=false','-e','PYGLET_HEADLESS=true',
@@ -109,6 +111,10 @@ def run(out,focus):
     assert not subprocess.check_output(['git','status','--porcelain','--untracked-files=no'],cwd=BASE,text=True).strip(),'Modified producing code'
     kit=Path(request['kit']);runtime=Path(request['runtime']);destination=Path(request['output'])
     results=destination/'results';logs=destination/'logs';results.mkdir(parents=True,exist_ok=True);logs.mkdir(exist_ok=True)
+    # The evaluator and reference remain read-only; only derived collision and
+    # kernel caches need writable storage. Keep caches across replay containers.
+    (runtime/'src/flash_chord/assets/.cache').mkdir(exist_ok=True)
+    for folder in ['geometry','user']:(destination/'runtime-cache'/folder).mkdir(parents=True,exist_ok=True)
     staged=read(Path(request['staging'])/'readiness.json')['episodes']
     script_sha=digest(kit/'flash_chord/scripts/evaluate_policy.py');code_sha=package_hash(runtime)
     status=read(out/'submission-replay-status.json');request_sha=digest(request_path)

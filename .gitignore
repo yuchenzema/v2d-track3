@@ -4,6 +4,7 @@
 !/*.py
 !/*.sh
 !/*.c
+!/progress_dashboard.html
 !/.gitignore
 !/README.md
 !/submission_docs/
