@@ -77,6 +77,27 @@ def docker_command(root,checkpoint,kit,runtime,output,ep):
     return ['sg','docker','-c',shlex.join(['docker',*args])]
 
 
+def pack_results(request,staged,destination,kit):
+    """Use the provided packer and uploader dry-run, with no provenance edits."""
+    for item in staged.values():
+        for mesh in item['meshes'].values():
+            assert digest(Path(mesh['submitted_mesh']))==mesh['submitted_sha256'],'Selected mesh changed'
+    python=BASE/'.venv-submission/bin/python'
+    target=destination/'track3_submission.parquet'
+    commands=[('pack',[str(python),str(kit/'tools/pack_submission.py'),'--track','track_3',
+        '--results',str(destination/'results'),'--meshes',str(Path(request['staging'])/'meshes'),
+        '--code-commit',request['code_commit_url'],'-o',str(target)]),
+        ('preflight',[str(python),str(kit/'tools/preflight.py'),'--track','track_3',
+            '--results',str(destination/'results')]),
+        ('dry-run',[str(python),str(kit/'submit/v2d_submit.py'),str(target),'--track','track_3',
+            '-m','Preserved Track 3 evaluation policies; official replay','--dry-run'])]
+    for label,command in commands:
+        with (destination/'logs'/f'{label}.log').open('w') as log:
+            subprocess.run(command,cwd=BASE,stdout=log,stderr=subprocess.STDOUT,check=True)
+    return dict(file=str(target),sha256=digest(target),official_packer_used=True,
+                provenance_edited=False,dry_run_passed=True,uploaded=False)
+
+
 def run(out,focus):
     if not pending(out):return False
     request_path=out/'submission-replay-request.json';request=read(request_path)
@@ -134,9 +155,19 @@ def run(out,focus):
             state=read(out/'status.json');state.update(status='submission_replay_blocked',current_episode=None,
                 active_optimization=None,phase='Official submission replay failed; source repairs remain independent',updated_utc=utc())
             save(out/'status.json',state);return False
-    status.update(status='complete',active_episode=None,updated_utc=utc(),uploaded=False)
+    try:
+        state=read(out/'status.json');state.update(status='submission_packaging',current_episode=None,
+            active_optimization=None,phase='Official replays complete; packing full roster and checking Kaggle submission',updated_utc=utc())
+        save(out/'status.json',state)
+        status['package']=pack_results(request,staged,destination,kit)
+    except Exception as error:
+        status.update(status='blocked',active_episode=None,error=f'{type(error).__name__}: {error}',
+                      failure_log=str(logs),updated_utc=utc())
+        save(out/'submission-replay-status.json',status);return False
+    status.update(status='complete',active_episode=None,updated_utc=utc(),uploaded=False,
+                  ready_for_upload=True)
     save(out/'submission-replay-status.json',status)
     state=read(out/'status.json');state.update(active_optimization=None,current_episode=None,
-        status='submission_replays_complete',phase='All preserved policies replayed by the official evaluator; packaging next',updated_utc=utc())
+        status='submission_replays_complete',phase='Official full-roster Parquet packed and dry-run checked; not uploaded',updated_utc=utc())
     save(out/'status.json',state)
     return False

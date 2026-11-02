@@ -104,6 +104,7 @@ def snapshot(out):
     public = read(out/'pipeline_validation_20261029/status.json')
     state = read(out/'status.json')
     experimental=read(out/'experimental-training-status.json')
+    submission=read(out/'submission-replay-status.json')
     cad = read(out/'source-cad-status.json')
     health = read(out/'health-monitor.json')
     source_active = state.get('status') in {'source_cad_alignment', 'evaluation_frontend'}
@@ -171,6 +172,7 @@ def snapshot(out):
                 strict_completed=done, strict_completion_count=len(done),
                 learner_pids=sorted(learners), training_steps=steps,
                 recorded_training_steps_by_episode=history,
+                submission_replay=submission,
                 blocking_failure=failure, health=health.get('status'),
                 public_status=public.get('status'), quality_gates_unchanged=True)
 
@@ -207,6 +209,7 @@ def render(report):
         f"[{report['updated_utc']}] Evaluation 20 本機進度（不呼叫模型）",
         f"目前 episode={report['active_episode']}；階段={report['stage'] or report['state']}{progress}",
         f"CAD 已審核 {report['inspected']}/20；來源局部檢查通過 {report['source_locally_passed']}/20；嚴格完成 {report['strict_completion_count']}/20",
+        (f"提交用官方重評 {len(report.get('submission_replay',{}).get('episodes',{}))}/20；狀態={report.get('submission_replay',{}).get('status')}；尚未上傳。" if report.get('submission_replay') else ''),
         (f"Policy learner 已啟動，steps={report['training_steps'] if report['training_steps'] is not None else '初始化／編譯中，等待首筆回報'}，PID={report['learner_pids']}" if report['learner_pids']
          else f"目前沒有 policy 在訓練；此 run 已記錄訓練 steps={report['training_steps'] or 0}。"),
         '已記錄的實驗訓練：'+(', '.join(f"episode {ep}={steps:,} steps" for ep,steps in report.get('recorded_training_steps_by_episode',{}).items()) or '尚無；品質驗收另計。'),
