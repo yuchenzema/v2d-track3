@@ -115,6 +115,7 @@ def snapshot(out):
         run=experimental.get('run')
         if run and active is None:active=read(Path(run)/'episode-config.json').get('episode')
     progress = read(Path(run)/'research/cad-progress.json') if run else {}
+    if job.get('submission_replay'):progress={}
     # A cached CAD progress file must never label a different frontend stage.
     stage = cad.get('stage') if source_active else job.get('action') or state.get('phase')
     if job.get('experimental_only'):

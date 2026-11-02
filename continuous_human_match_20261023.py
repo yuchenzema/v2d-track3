@@ -201,6 +201,8 @@ def main():
                 from source_cad_queue import run as audit_evaluation_sources
                 audit_evaluation_sources(OUT,FOCUS,coverage_only=True)
             time.sleep(60)
+    from submission_replay_queue import run as replay_preserved_policies
+    if replay_preserved_policies(OUT,FOCUS):return
     if read(OUT/'experimental-training-policy.json',{}).get('enabled'):
         from evaluation_experiment_queue import run as run_experiments
         if run_experiments(OUT,FOCUS):return

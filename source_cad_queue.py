@@ -82,6 +82,11 @@ def run(out,focus,coverage_only=False):
             state.update(status='awaiting_safe_controller_reload',current_episode=None,active_optimization=None)
             emit();return False
         if not coverage_only:
+            from submission_replay_queue import pending as submission_replay_pending
+            if submission_replay_pending(out):
+                cad.update(status='submission_replay_ready',active_episode=None)
+                state.update(status='submission_replay_ready',current_episode=None,active_optimization=None)
+                emit();return False
             experimental=read(out/'experimental-training-policy.json',{})
             if experimental.get('enabled'):
                 from evaluation_experiment_queue import candidates as admitted_pilots

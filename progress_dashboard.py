@@ -649,7 +649,9 @@ def collect():
             public_label=f'Public validation {public_ep:06d}' if public_ep is not None else 'Public validation'
             hero=f'{public_label}: {public_validation.get("phase_detail") or public_validation.get("phase","video reconstruction")}. No evaluation policy is training.'
         experimental_job=human_match_loop.get('active_optimization') or {}
-        if experimental_job.get('experimental_only'):
+        if experimental_job.get('submission_replay'):
+            hero=f"Evaluation {experimental_job['episode']:06d}: official replay of preserved policy for submission. No policy training; strict episode completion unchanged."
+        elif experimental_job.get('experimental_only'):
             experimental_ep=experimental_job['episode']
             hero=f"Evaluation {experimental_ep:06d} experimental pilot: {human_match_loop.get('phase','physical reference preparation')}. Not strict completion."
             if human_match_loop.get('status')=='experimental_policy_training':
