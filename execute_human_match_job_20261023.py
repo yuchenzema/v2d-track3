@@ -183,6 +183,12 @@ w.install=install
 
 def main():
     prepare();out.mkdir(exist_ok=True)
+    requested_hashes=job.get('execution_input_hashes',{})
+    if requested_hashes:
+        actual_hashes={filename:digest(BASE/filename) for filename in requested_hashes}
+        assert actual_hashes==requested_hashes,'Queued scientific code changed before episode execution; schedule a fresh generation'
+        save(root/'research/job-execution-inputs.json',dict(updated_utc=utc(),source_code_hashes=actual_hashes,
+             generation=generation,request=str(args.request),resumed_frozen_inputs=(root/'coherent-input-checksums.json').exists()))
     if job.get('approved_source_cad_run'):
         from install_source_cad_reference import install as install_approved
         install_approved(root,job['approved_source_cad_run'])
@@ -212,6 +218,13 @@ def main():
         w.status(ep,'Adopting the existing learner after continuous-loop recovery');time.sleep(15)
     from episode_completion_gate import completion
     for training_round in range(3 if job.get('validated_video_pipeline') and not job.get('experimental_training') else 1):
+        if requested_hashes:
+            helper_names=['optimize_native_grasps.py','native_pinch_contacts.py','grasp_physics_checks.py',
+                          'rigid_pose_collision_audit.py','apply_collision_transitions.py']
+            helper_hashes={filename:digest(root/'scripts'/filename) for filename in helper_names}
+            assert all(helper_hashes[name]==requested_hashes[name] for name in helper_names), 'Prepared native helpers do not match the requested scientific code'
+            save(root/'research/pretraining-helper-code.json',dict(updated_utc=utc(),sha256=helper_hashes,
+                 requested_hashes_matched=True))
         run_stage(w.train_and_export,'policy training, rollout and frame audit')
         report=json.loads((out/f'human_review/episode_{ep:06d}/report.json').read_text())
         frames=json.loads((out/f'human_review/episode_{ep:06d}/frame-metrics.json').read_text())

@@ -132,6 +132,7 @@ def run(out,focus):
         if prior.get('episode')==ep and prior.get('source_version')==report['trajectory_sha256']:
             request=prior_request;job=prior;generation=job['generation']
     job.update(source_run=str(source),baseline_run=str(source))
+    job['execution_input_hashes']=execution_inputs()
     save(request,job)
     run_root=BASE/f'runs/episode_{ep:06d}_newton_human_match_20261023_g{generation:03d}'
     state=read(out/'status.json')
