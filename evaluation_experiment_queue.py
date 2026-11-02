@@ -38,18 +38,27 @@ def baseline_source(source):
 
 def candidates(out,focus,policy):
     reports=read(out/'source-cad-status.json').get('results',{})
+    registered={}
     for ep,path in read(out/'experimental-source-candidates.json').items():
-        if int(ep) in focus:reports[ep]=read(Path(path))
+        if int(ep) in focus:registered[ep]=read(Path(path))
     history=read(out/'experimental-training-status.json').get('attempts',{})
     result=[]
     for ep in focus:
-        report=reports.get(str(ep),{})
-        admission=assess(report,policy)
-        signature=report.get('trajectory_sha256')
-        previous=history.get(str(ep),{})
-        if not admission['admitted']:continue
-        if previous.get('trajectory_sha256')==signature and previous.get('execution_input_hashes')==execution_inputs():continue
-        result.append((ep,report,admission))
+        seen=set()
+        for report in [reports.get(str(ep),{}),registered.get(str(ep),{})]:
+            signature=report.get('trajectory_sha256')
+            if not signature or signature in seen:continue
+            seen.add(signature)
+            admission=assess(report,policy)
+            if not admission['admitted']:continue
+            latest=history.get(str(ep),{})
+            previous=latest.get('source_attempts',{}).get(signature,{})
+            if not previous and latest.get('trajectory_sha256')==signature:previous=latest
+            # Scheduler bookkeeping cannot justify rerunning an unchanged,
+            # already-finished scientific experiment or touching frozen inputs.
+            scientific=lambda hashes:{k:v for k,v in hashes.items() if k!='evaluation_experiment_queue.py'}
+            if previous and scientific(previous.get('execution_input_hashes',{}))==scientific(execution_inputs()):continue
+            result.append((ep,report,admission))
     return sorted(result,key=lambda item:-item[2]['minimum_qualified_fraction'])
 
 
@@ -93,11 +102,13 @@ def run(out,focus):
         training_budget=int(policy['training_budget']),time_advance_frames=0.,require_full_sequence_pickup=True,
         worst_windows=[dict(start=0,end=report['source_frames']-1,source='Full unwarped source sequence')])
     request=out/f'jobs/episode_{ep:06d}-experimental-g{generation:03d}.json'
-    saved_request=status.get('attempts',{}).get(str(ep),{}).get('request') or status.get('request')
+    latest=status.get('attempts',{}).get(str(ep),{})
+    source_attempt=latest.get('source_attempts',{}).get(report['trajectory_sha256'],{})
+    saved_request=source_attempt.get('request') or latest.get('request') or status.get('request')
     prior_request=Path(saved_request) if saved_request else None
     if prior_request and prior_request.exists():
         prior=read(prior_request)
-        if prior.get('source_version')==report['trajectory_sha256']:
+        if prior.get('episode')==ep and prior.get('source_version')==report['trajectory_sha256']:
             request=prior_request;job=prior;generation=job['generation']
     job.update(source_run=str(source),baseline_run=str(source))
     save(request,job)
@@ -128,9 +139,15 @@ def run(out,focus):
             if (run_root/'flash_chord_coherent_actor_transfer/TRAINING_COMPLETED').exists():
                 state['status']='experimental_policy_validation'
             state.update(updated_utc=utc());save(out/'status.json',state);time.sleep(10)
-    status['attempts'][str(ep)]=dict(trajectory_sha256=report['trajectory_sha256'],request=str(request),
+    previous=status['attempts'].get(str(ep),{})
+    source_attempts=dict(previous.get('source_attempts',{}))
+    if previous.get('trajectory_sha256'):
+        source_attempts.setdefault(previous['trajectory_sha256'],{k:v for k,v in previous.items() if k!='source_attempts'})
+    attempt=dict(trajectory_sha256=report['trajectory_sha256'],request=str(request),
         run=str(run_root),exit_code=child.returncode,finished_utc=utc(),log=str(logpath),
         execution_input_hashes=status['execution_input_hashes'])
+    source_attempts[report['trajectory_sha256']]=dict(attempt)
+    status['attempts'][str(ep)]=dict(attempt,source_attempts=source_attempts)
     status.update(status='pilot_finished' if child.returncode==0 else 'pilot_blocked',active_episode=None,updated_utc=utc())
     if child.returncode:
         status['latest_failure']=read(request.with_suffix('.error.json')).get('error','See '+str(logpath))
@@ -146,6 +163,20 @@ def run(out,focus):
         if gate.get('passed') is False:
             status['failure_summary']=(f"Episode {ep} 接觸檢查失敗：最大穿透 {gate.get('maximum_penetration_mm')} mm；"
                 f"門檻 {gate.get('numerical_epsilon_m',1e-6)*1000} mm。Learner 尚未啟動。")
+        # A newly source-admitted reconstruction may still need bounded table
+        # clearance. Revalidate a separate candidate against every source frame
+        # rather than weakening exact reference binding or moving frozen inputs.
+        if ('Physics retargeting moved objects away from source-aligned CAD' in str(status.get('latest_failure'))
+                and policy.get('allow_source_revalidated_physical_candidate') is True):
+            try:
+                from episode_execution_guard import episode_slot
+                from source_ray_clearance_candidate import build
+                with episode_slot(run_root,ep):repaired,repair_admission=build(run_root)
+                status['bounded_source_repair']=dict(candidate=str(repaired),admission=repair_admission)
+                if repair_admission['admitted']:
+                    status.update(status='source_revalidated_after_physics_clearance',failure_summary=None)
+            except Exception as error:
+                status['bounded_source_repair_error']=f'{type(error).__name__}: {error}'
     save(out/'experimental-training-status.json',status)
     state.update(active_optimization=None,current_episode=None,status=status['status'],updated_utc=utc())
     save(out/'status.json',state)

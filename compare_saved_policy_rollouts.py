@@ -50,6 +50,8 @@ def run():
                 errors=np.linalg.norm(aligned-expected,axis=2)*100
                 row=dict(episode=ep,objects=names,run=str(root),source_iou=selected.get('source_mean_object_iou'),
                     center_error_cm=errors.mean(axis=0).tolist(),p95_cm=np.quantile(errors,.95,axis=0).tolist(),
+                    actual_motion_extent_cm=(np.linalg.norm(actual-actual[0],axis=2).max(axis=0)*100).tolist(),
+                    expected_motion_extent_cm=(np.linalg.norm(expected-expected[0],axis=2).max(axis=0)*100).tolist(),
                     source_state_sha256=digest(state),checkpoint_sha256=digest(checkpoint),
                     recording=str(state),checkpoint=str(checkpoint),same_mesh_as_baseline=True,
                     object_assistance_zero=True,complete_source_sequence=True,diagnostic_only=True)
@@ -61,6 +63,7 @@ def run():
                 baseline.get('source_iou') is not None and r['source_iou']>=baseline['source_iou'] and
                 np.all(np.array(r['center_error_cm'])<=np.array(baseline['center_error_cm'])) and
                 np.all(np.array(r['p95_cm'])<=np.array(baseline['p95_cm'])) and
+                np.all(np.array(r['actual_motion_extent_cm'])>=.75*np.where(np.array(r['expected_motion_extent_cm'])>=1.5,r['expected_motion_extent_cm'],0.)) and
                 np.mean(r['center_error_cm'])<np.mean(baseline['center_error_cm'])*.9]
             if eligible:
                 best=min(eligible,key=lambda r:np.mean(r['center_error_cm']))

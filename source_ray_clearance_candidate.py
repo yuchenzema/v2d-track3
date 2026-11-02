@@ -44,7 +44,7 @@ def build(training_root):
     motion['object_to_world']=lift_along_source_rays(motion['object_to_world'],motion['camera_to_world'],lift)
     shift=np.linalg.norm(motion['object_to_world'][:,:,:3,3]-source['object_to_world'][:,:,:3,3],axis=2)
     assert shift.max()<.025,'Candidate exceeds the bounded reconstruction repair'
-    root=approved.with_name(approved.name+'_source_ray_clearance')
+    root=approved.with_name(approved.name+'_source_ray_clearance_'+original['trajectory_sha256'][:12])
     assert not root.exists(),'Candidate already exists; preserve its evidence'
     for folder in ['reconstruction','research','videos','logs','evaluation']:(root/folder).mkdir(parents=True,exist_ok=True)
     for path in (approved/'reconstruction').iterdir():
@@ -79,6 +79,7 @@ def build(training_root):
         experimental_only=True,episode_done=False,policy_training_started=False,
         source_candidate_parent=str(approved),source_candidate_parent_trajectory_sha256=original['trajectory_sha256'],
         repair_method='Bounded translation along each original source-camera ray; preserve CAD scale, orientation, timestamps and source images; independently recheck every final overlay and sphere',
+        repair_algorithm_sha256=digest(Path(__file__)),
         maximum_translation_m=float(shift.max()),overlay=None)
     save(root/'research/cad-alignment-report.json',report)
     admission=assess(report,json.loads(POLICY.read_text()))
