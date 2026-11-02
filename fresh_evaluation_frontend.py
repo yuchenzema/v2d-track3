@@ -122,7 +122,7 @@ def prepare(source,episode):
         cached=BASE/f'runs/evaluation_episode_{episode:06d}_frontend_20261029_v4'
         if (cached/'reconstruction/foundation-stereo-sequence.json').is_file():source=cached
         measurements+=['depth_moge','moge_intrinsics',
-                       'sift-pnp-odometry.json','slam',
+                       'sift-pnp-odometry.json','sift-pnp-odometry.npz','slam',
                        'table-camera-calibration.npz','table-camera-calibration.json','table-initial-plane.npz']
     for name in measurements:
         src=source/'reconstruction'/name;dst=root/'reconstruction'/name

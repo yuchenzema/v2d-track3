@@ -192,10 +192,11 @@ def snapshot(out):
         if count and cfg.get('episode') in EPISODES:history[str(cfg['episode'])]=max(count,history.get(str(cfg['episode']),0))
     fast=read(out/'fast-evaluation-status.json')
     ready=[int(ep) for ep,row in fast.get('episodes',{}).items() if row.get('status')=='ready_for_submission']
+    own_history={}
     for ep,row in fast.get('episodes',{}).items():
         if row.get('run'):
             count=recorded_steps(row['run'])
-            if count:history[str(ep)]=max(count,history.get(str(ep),0))
+            if count:own_history[str(ep)]=count
     if state.get('status')=='fast_submission_running':
         stage=state.get('phase') or stage
         progress={}
@@ -211,6 +212,7 @@ def snapshot(out):
                 strict_completed=done, strict_completion_count=len(done),
                 learner_pids=sorted(learners), training_steps=steps,
                 recorded_training_steps_by_episode=history,
+                own_training_steps_by_episode=own_history,
                 pilot_validation=pilot_validation(out),
                 submission_replay={} if own else submission,
                 own_geometry_required=own,
@@ -264,6 +266,7 @@ def render(report):
         (f"Policy learner 已啟動，steps={report['training_steps'] if report['training_steps'] is not None else '初始化／編譯中，等待首筆回報'}，PID={report['learner_pids']}" if report['learner_pids']
          else f"目前沒有 policy 在訓練；此 run 已記錄訓練 steps={report['training_steps'] or 0}。"),
         ('歷史實驗訓練（包含已排除的掃描衍生舊 run）：' if report.get('own_geometry_required') else '已記錄的實驗訓練：')+(', '.join(f"episode {ep}={steps:,} steps" for ep,steps in report.get('recorded_training_steps_by_episode',{}).items()) or '尚無；品質驗收另計。'),
+        ('本輪自建幾何 policy 訓練：'+', '.join(f"episode {ep}={steps:,} steps" for ep,steps in report.get('own_training_steps_by_episode',{}).items()) if report.get('own_training_steps_by_episode') else ''),
         (f"最新實驗 episode {report['pilot_validation']['episode']}：訓練 {'完成' if report['pilot_validation']['training_finished'] else '尚未完成'}；policy 抓取={'通過' if report['pilot_validation']['policy_grasp_passed'] is True else '未通過' if report['pilot_validation']['policy_grasp_passed'] is False else '待驗證'}；來源運動失敗幀={report['pilot_validation']['failed_source_frames']}；接觸檢查={'未通過' if report['pilot_validation']['contact_validation_failed'] is True else '通過' if report['pilot_validation']['contact_validation_failed'] is False else '待驗證'}。" if report.get('pilot_validation') else ''),
         (f"本輪沿用 {report['pilot_validation']['actor_transfer_source_steps']:,} steps 舊模型的 actor；新增訓練 steps 另計，critic 與 optimizer 重新初始化。" if report.get('pilot_validation',{}).get('actor_transfer_source_steps') else ''),
         f"阻塞：{str(report['blocking_failure'] or '目前沒有新的執行錯誤。')[-1600:]}",
