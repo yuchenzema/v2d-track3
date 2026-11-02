@@ -57,3 +57,28 @@ class FastSubmissionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);self.fixture(root);(root/'own-reference').write_bytes(b'edited')
             with self.assertRaisesRegex(ValueError,'Frozen'):self.evaluate(root)
+
+    def test_physics_setup_can_change_only_before_any_learning(self):
+        from fast_policy_execution import reset_untrained_setup
+        for trained in [False,True]:
+            with self.subTest(trained=trained),tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);self.fixture(root)
+                (root/'flash_chord_coherent_actor_transfer/TRAINING_COMPLETED').unlink()
+                (root/'scripts').mkdir();(root/'scripts/train_coherent_actor_transfer.py').write_text('old physics setup')
+                (root/'coherent-training-config.json').write_text(json.dumps(dict(scene=dict(decompose_objects=True))))
+                if trained:(root/'flash_chord_coherent_actor_transfer/metrics.jsonl').write_text(json.dumps(dict(environment_steps=512)))
+                frozen=root/'coherent-input-checksums.json';before=frozen.read_bytes()
+                self.assertEqual(reset_untrained_setup(root),not trained)
+                if trained:self.assertEqual(frozen.read_bytes(),before)
+                else:
+                    self.assertFalse(frozen.exists())
+                    self.assertEqual(next((root/'research/pretraining-setup-history').glob('*/coherent-input-checksums.json')).read_bytes(),before)
+
+    def test_saved_policy_also_prevents_physics_setup_changes(self):
+        from fast_policy_execution import reset_untrained_setup
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);self.fixture(root)
+            (root/'flash_chord_coherent_actor_transfer/TRAINING_COMPLETED').unlink()
+            (root/'coherent-training-config.json').write_text(json.dumps(dict(scene=dict(decompose_objects=True))))
+            (root/'flash_chord_coherent_actor_transfer/policy_0.safetensors').write_bytes(b'own policy')
+            self.assertFalse(reset_untrained_setup(root))

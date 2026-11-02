@@ -57,7 +57,37 @@ def training_script(episode,seed):
     text=text.replace("'reset.seed=43'",f"'reset.seed={seed}'")
     text=text.replace("'world_count': 1024","'world_count': 512").replace("'seed': 43",f"'seed': {seed}")
     text=text.replace("install_training_fingers(native['main'].__wrapped__.__globals__)","install_training_fingers(native['main'].__wrapped__.__globals__,focus=episode.get('training_focus'))")
+    # Native supported scene option: contacts remain enabled, but the own mesh
+    # uses its single convex hull rather than expensive concavity decomposition.
+    text=text.replace("    validated=bool(episode.get('validated_video_pipeline'))",
+        "    validated=bool(episode.get('validated_video_pipeline'))\n    if episode.get('fast_submission'):cfg.scene.decompose_objects=False")
+    text=text.replace("'baseline_inputs_copied_without_pose_or_geometry_edits': True",
+        "'baseline_inputs_copied_without_pose_or_geometry_edits': False, 'own_geometry_source': episode.get('fast_source_run'), 'collision_approximation': 'native single convex hull of the reconstructed mesh; real contacts enabled'")
     return text
+
+
+def reset_untrained_setup(root):
+    """Only a setup with zero learning/checkpoints may adopt faster physics."""
+    root=Path(root);manifest=root/'coherent-input-checksums.json'
+    if not manifest.exists():return False
+    config=json.loads((root/'coherent-training-config.json').read_text())
+    if config.get('scene',{}).get('decompose_objects') is False:return False
+    folder=root/'flash_chord_coherent_actor_transfer'
+    if list(folder.glob('*.safetensors')) or (folder/'TRAINING_COMPLETED').exists():return False
+    metrics=folder/'metrics.jsonl'
+    if metrics.exists():
+        for line in metrics.read_text().splitlines():
+            if json.loads(line).get('environment_steps',0)>0:return False
+    for name,expected in json.loads(manifest.read_text()).items():
+        assert digest(root/name)==expected,'Untrained reference changed before physics setup'
+    history=root/'research/pretraining-setup-history'/digest(manifest)[:16];history.mkdir(parents=True,exist_ok=True)
+    for name in ['coherent-input-checksums.json','coherent-training-config.json','coherent-training-provenance.json']:
+        path=root/name
+        if path.exists():path.rename(history/name)
+    shutil.copy2(root/'scripts/train_coherent_actor_transfer.py',history/'train_coherent_actor_transfer.py')
+    save(history/'reason.json',dict(updated_utc=utc(),actual_training_steps=0,
+        checkpoint_existed=False,reason='Replace expensive pretraining CoACD setup with supported native convex-hull contacts'))
+    return True
 
 
 def run(root,job,make_container,status):
@@ -65,6 +95,7 @@ def run(root,job,make_container,status):
     from batch_native import docker,_docker,launch_training
     from official_policy_suite import evaluate_candidate,verify_trajectory
     root=Path(root);cfg=install_source(root,job['fast_source_run']);ep=cfg['episode']
+    reset_untrained_setup(root)
     status(ep,'Fast submission: retarget the estimated source once; quality is diagnostic')
     if not (root/'coherent-input-checksums.json').exists():install(root)
     for helper in ['legacy_source_frame_playback.py','actor_transfer_training.py','run_geometry_cpu.py',
