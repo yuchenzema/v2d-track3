@@ -54,9 +54,20 @@ def prepare(source,root,cfg):
         for body,mask in enumerate(masks):
             points=interior_points(mask)
             prompts.append(dict(object_id=body+1,frame_index=frame,points=points,point_labels=[1]*len(points)))
+        frame_hashes={str(frame):digest(source/f'reconstruction/frames/{frame:06d}.png')}
+        if cfg['episode']==1:
+            # RGB-inspected stacked view: the lid owns the top surface, while
+            # the pot owns the visible side wall and handle. A separated view
+            # alone lets backward propagation assign the closed lid to the pot.
+            anchors={1:[(560,575),(565,620),(580,535)],
+                     2:[(535,450),(580,478),(532,504),(548,418)]}
+            for body,points in anchors.items():
+                prompts.append(dict(object_id=body,frame_index=0,
+                    points=[dict(x=float(x),y=float(y)) for x,y in points],point_labels=[1]*len(points)))
+            frame_hashes['0']=digest(source/'reconstruction/frames/000000.png')
         review=dict(prompts=prompts,
-            source_frames_sha256={str(frame):digest(source/f'reconstruction/frames/{frame:06d}.png')},
-            provenance='Source-only visible instance interiors on a separated source frame; EP1 frame150 checked against RGB. No geometry or pose inputs.')
+            source_frames_sha256=frame_hashes,
+            provenance='Source-only visible instance interiors; EP1 frames0 and150 checked against RGB for stacked/separated ownership. No geometry or pose inputs.')
     review.update(exclusive_visible_instances=True,cross_instance_negatives=len(cfg['objects'])>1)
     for name in ['sam2_prompts.json','source-prompt-review.json']:save(rec/name,review)
     save(root/'research/source-instance-initialization.json',dict(

@@ -683,7 +683,7 @@ def collect():
             own_rows={}
             focus=human_match_loop.get('focused_episodes',[])
             for ep in focus:
-                frontend=BASE/f'runs/evaluation_episode_{ep:06d}_frontend_20261029_v4_own_geometry_20261102_v2'
+                frontend=BASE/f'runs/evaluation_episode_{ep:06d}_frontend_20261029_v4_own_geometry_20261102_v3'
                 cfg=read_json(frontend/'episode-config.json',{})
                 geometry=read_json(frontend/'research/own-geometry-provenance.json',{})
                 poses={name:len(list((frontend/'reconstruction/object_poses'/name).glob('*.json'))) for name in cfg.get('objects',[])}

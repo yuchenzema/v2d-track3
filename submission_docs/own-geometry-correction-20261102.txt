@@ -21,7 +21,7 @@ Audit findings:
   not deleted or silently relabelled as compliant.
 
 Correction:
-- evaluation_rgb_depth_geometry_v2_20261102 builds a separate metric mesh per
+- evaluation_rgb_depth_geometry_v3_20261102 builds a separate metric mesh per
   object from evaluation RGB, source segmentation, and FoundationStereo depth.
 - Unobserved depth holes and backs are explicit completion estimates. A closed
   mesh is not a claim that unseen shape has been recovered or quality passed.
@@ -64,3 +64,9 @@ fresh directories. Recomputed mutable depth/camera caches are real copies, so
 in-place cache writers cannot modify historical inputs. Completion thickness
 uses surface-normal scatter rather than camera-z variation (which confounds
 plate slant with thickness). All source/physics quality thresholds remain intact.
+
+The stacked frame0 was also inspected after v2: exclusivity removed overlap but
+backward propagation still assigned most lid pixels to the pot. Revision v3
+adds explicit RGB-only pot-wall/handle and lid-surface positives at frame0,
+conditioned jointly with separated frame150. Both original frames are hashed.
+Zero overlap alone is not considered correct identity or an episode pass.

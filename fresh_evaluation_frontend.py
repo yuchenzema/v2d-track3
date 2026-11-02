@@ -112,7 +112,7 @@ def prepare(source,episode):
     from own_geometry import required as own_required
     own=own_required(base=BASE)
     root=BASE/f'runs/evaluation_episode_{episode:06d}_frontend_20261029_v4'
-    if own:root=root.with_name(root.name+'_own_geometry_20261102_v2')
+    if own:root=root.with_name(root.name+'_own_geometry_20261102_v3')
     for name in ['reconstruction','research','logs','scripts','evaluation','videos']:(root/name).mkdir(parents=True,exist_ok=True)
     for name in ['.venv-video','models']:
         target=root/name

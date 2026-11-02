@@ -14,7 +14,7 @@ import trimesh
 from scipy.ndimage import distance_transform_edt
 from improvement_common import BASE, BATCH, digest, save, utc
 
-REVISION='evaluation_rgb_depth_geometry_v2_20261102'
+REVISION='evaluation_rgb_depth_geometry_v3_20261102'
 
 
 def required(out=None,base=None):

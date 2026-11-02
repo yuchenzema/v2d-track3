@@ -54,7 +54,7 @@ def run(out,focus,coverage_only=False):
     from own_geometry import required as own_required
     own=own_required(out)
     version='fresh_stereo_sift_frontend_v4' if read(out/'validated-pipeline-policy.json',{}).get('camera_odometry_method')=='sift_pnp_metric' else 'depth_markers_source_clock_v2'
-    if own:version='evaluation_rgb_depth_geometry_v2_20261102'
+    if own:version='evaluation_rgb_depth_geometry_v3_20261102'
     if validated and cad.get('pipeline_version')!=version:
         if cad:save(out/f'source-cad-status-before-validated-{int(time.time())}.json',cad)
         cad=dict(pipeline_version=version,results={},attempts={})
@@ -138,7 +138,7 @@ def run(out,focus,coverage_only=False):
         ep=pending[0];key=str(ep)
         source=Path(cad.setdefault('sources',{}).setdefault(key,str(source_for(ep))))
         root=BASE/f'runs/episode_{ep:06d}_cad_source_{"validated_v4" if version=="fresh_stereo_sift_frontend_v4" else "validated" if validated else "alignment"}_20261029'
-        if own:root=BASE/f'runs/episode_{ep:06d}_cad_source_own_geometry_v2_20261102'
+        if own:root=BASE/f'runs/episode_{ep:06d}_cad_source_own_geometry_v3_20261102'
         previous_failure=cad.pop('latest_failure',None)
         if previous_failure:
             cad['previous_failure']=dict(episode=ep,message=previous_failure,archived_utc=utc())
