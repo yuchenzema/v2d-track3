@@ -188,6 +188,11 @@ def main():
     # Own-geometry scope supersedes historical policy/scan replay requests.
     from own_geometry import required as own_required
     own=own_required(OUT)
+    from fast_submission_policy import enabled as fast_submission_enabled
+    if own and fast_submission_enabled(OUT):
+        from fast_evaluation_queue import run as complete_first
+        complete_first(OUT,FOCUS)
+        return
     if own:
         from own_submission_queue import run as submit_own_cohort
         submit_own_cohort(OUT,FOCUS)

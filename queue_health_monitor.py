@@ -221,9 +221,10 @@ def main():
     if experimental.get('status')=='pilot_blocked':
         detail=str(experimental.get('failure_summary') or experimental.get('latest_failure') or 'See pilot logs').strip().splitlines()[-1]
         alerts.append('Experimental policy preparation is blocked: '+detail)
-    if apply_pending_update(paused,done):
+    submission_complete=bool(state.get('submission_cohort_completed'))
+    if apply_pending_update(paused,done or submission_complete):
         actions.append('Reloaded collision-aware queue checks between episodes; no learner was interrupted.')
-    if recovery_decision(controller, paused, done, owned):
+    if recovery_decision(controller, paused, done or submission_complete, owned):
         subprocess.run(['systemctl', '--user', '--no-block', 'start', CONTROLLER], check=True, timeout=10)
         actions.append('Started unavailable queue controller; no existing episode process was alive.')
     if gui in {'inactive', 'failed'}:
@@ -252,7 +253,7 @@ def main():
         'exact_motion_before_advancing': state.get('require_verified_match_before_next') is True,
         'launches_episode_workers': False,
         'controller_update_pending': bool(read(OUT/'controller-reload-request.json',{}).get('pending')),
-        'task_status': 'paused_by_user' if paused else 'finished' if done else 'training' if learners else 'reconstructing_or_validating' if owned else 'waiting_to_retry_failed_episode' if failures else state.get('status'),
+        'task_status': 'paused_by_user' if paused else 'submission_cohort_completed' if submission_complete else 'finished' if done else 'training' if learners else 'reconstructing_or_validating' if owned else 'waiting_to_retry_failed_episode' if failures else state.get('status'),
         'consecutive_current_episode_failures':len(failures),
         'source_cad':source_cad,
     }

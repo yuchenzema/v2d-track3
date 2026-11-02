@@ -2,7 +2,8 @@
 
 No rollout is replaced with a target. No public scan, historical actor or stale
 receipt can make a cohort eligible. Exact-match completion remains a separate
-claim from passing local motion/contact checks and submitting measured results.
+claim from submitting measured results. In complete-first mode, unsuccessful
+motion/contact/grasp checks are diagnostic and never silently marked passed.
 """
 import fcntl
 import json
@@ -30,6 +31,9 @@ def eligible(root):
     if cfg.get('training_initial_counter')!=0:raise ValueError('Fresh own-geometry training origin unverified')
     validate(root)
     if not (root/'flash_chord_coherent_actor_transfer/TRAINING_COMPLETED').is_file():raise ValueError('Training incomplete')
+    from fast_submission_policy import enabled as fast_submission_enabled
+    if cfg.get('fast_submission') and fast_submission_enabled():
+        return eligible_fast(root,cfg)
     strict=read(root/'research/strict-human-match.json')
     if not (strict.get('all_frames_checked') is True and strict.get('passes_strict_local_checks') is True
             and strict.get('failed_frame_count')==0 and strict.get('unobservable_frame_count')==0
@@ -58,6 +62,45 @@ def eligible(root):
     return dict(run=str(root),episode=cfg['episode'],checkpoint=str(checkpoint),checkpoint_sha256=sha,
         trajectory=str(trajectory),trajectory_sha256=digest(trajectory),official_report=str(trajectory.with_suffix('.json')),
         strict_report_sha256=digest(root/'research/strict-human-match.json'),
+        meshes={name:str(root/f'reconstruction/mesh_priors/{name}.glb') for name in cfg['objects']})
+
+
+def eligible_fast(root,cfg):
+    """Submission integrity is mandatory; source/contact success is diagnostic."""
+    import numpy as np
+    from official_policy_suite import verify_trajectory
+    result=read(root/'research/fast-submission-result.json')
+    if result.get('status')!='ready_for_submission':raise ValueError('Fast policy rollout is not complete')
+    if result.get('public_object_scans_used') is not False:raise ValueError('Unverified reconstruction lineage')
+    checkpoint=Path(result['checkpoint']);sha=digest(checkpoint)
+    if sha!=result['checkpoint_sha256']:raise ValueError('Trained checkpoint changed')
+    suite=read(root/f'evaluation/official/{sha[:16]}/suite.json')
+    if suite.get('status')!='official_evaluation_complete' or suite.get('checkpoint_sha256')!=sha:
+        raise ValueError('Official policy evaluation is missing or stale')
+    steps=suite.get('attempts',{}).get('recorded',{}).get('actual_training_steps',0)
+    if not isinstance(steps,(int,float)) or steps<=0:raise ValueError('Actual trained policy steps missing')
+    trajectory=Path(suite['recorded_trajectory']);states=Path(suite['recorded_body_states'])
+    if digest(trajectory)!=result['trajectory_sha256'] or digest(states)!=result['states_sha256']:
+        raise ValueError('Official recorded artifacts changed')
+    provenance=verify_trajectory(trajectory,sha,suite['official_entrypoint_sha256'],1,cfg['episode'])
+    if int(provenance['flash_chord.step_count'])!=cfg['frames']:raise ValueError('Incomplete source frame grid')
+    with np.load(states,allow_pickle=False) as data:
+        if not bool(data['policy_inference']) or str(data['checkpoint_sha256'])!=sha:
+            raise ValueError('Recording is not inference from this policy')
+        if not np.all(data['object_assistance']==0.):raise ValueError('Recording used object force assistance')
+        if len(data['body_poses'])!=cfg['frames'] or not np.isfinite(data['body_poses']).all():
+            raise ValueError('Incomplete/nonfinite policy states')
+        if not np.array_equal(data['reference_frames'],np.arange(cfg['frames'])):
+            raise ValueError('Recorded source clock/frame order changed')
+    frozen=root/'coherent-input-checksums.json'
+    if not frozen.is_file() or not read(frozen):raise ValueError('Frozen training input manifest missing')
+    if digest(frozen)!=result.get('frozen_input_manifest_sha256'):raise ValueError('Training input manifest changed')
+    for name,expected in read(frozen).items():
+        if digest(root/name)!=expected:raise ValueError('Frozen own-policy training input changed')
+    return dict(run=str(root),episode=cfg['episode'],checkpoint=str(checkpoint),checkpoint_sha256=sha,
+        trajectory=str(trajectory),trajectory_sha256=digest(trajectory),official_report=str(trajectory.with_suffix('.json')),
+        fast_result_sha256=digest(root/'research/fast-submission-result.json'),
+        quality_acceptance_required=False,strict_completion_granted=False,
         meshes={name:str(root/f'reconstruction/mesh_priors/{name}.glb') for name in cfg['objects']})
 
 

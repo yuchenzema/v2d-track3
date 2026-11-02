@@ -6,7 +6,7 @@ from batch_retarget_templates import install as pot_install
 BASE=Path('/home/yu_eli/v2d-track3');OLD=BASE/'runs/episode_000005_newton_20261015/scripts'
 def install(r):
  c=json.loads((r/'episode-config.json').read_text());T=c['frames'];names=c['objects'];frozen_training=(r/'coherent-input-checksums.json').exists()
- if c['episode'] in [3,6]:pot_install(r)
+ if c['episode'] in [3,6] and not c.get('own_geometry_required'):pot_install(r)
  else:
   s=(OLD/'retarget_hands.py').read_text().replace('episode_000005',c['sequence']);s=s.replace("names=['white_pot','wooden_spoon'];",f'names={names!r};')
   start=s.index('handle_indices=');end=s.index("cells={'fps'",start)

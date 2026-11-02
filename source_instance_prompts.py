@@ -49,7 +49,18 @@ def prepare(source,root,cfg):
                 if frame>=cfg['frames']:continue
                 masks=[cv2.imread(str(source/f'reconstruction/masks/{body+1}/{frame:06d}.png'),0) for body in range(len(cfg['objects']))]
                 if all(m is not None for m in masks):yield frame,[m>0 for m in masks]
-        _,frame,masks=separated_frame(frames())
+        try:_,frame,masks=separated_frame(frames())
+        except ValueError:
+            if not cfg.get('fast_submission'):raise
+            review=copy.deepcopy(original)
+            review.update(exclusive_visible_instances=True,cross_instance_negatives=True,
+                source_instance_quality_unverified=True,
+                provenance='Fast mode: original image-derived detection hints; no separated conditioning view found. No CAD or pose inputs.')
+            for name in ['sam2_prompts.json','source-prompt-review.json']:save(rec/name,review)
+            save(root/'research/source-instance-initialization.json',dict(source=str(source),
+                prompt_sha256=digest(rec/'sam2_prompts.json'),geometry_or_pose_used=False,
+                original_masks_modified=False,quality_is_diagnostic=True))
+            return review
         prompts=[]
         for body,mask in enumerate(masks):
             points=interior_points(mask)

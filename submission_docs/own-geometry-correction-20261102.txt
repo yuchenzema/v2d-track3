@@ -1,5 +1,16 @@
 Track 3 correction, 2026-11-02
 
+LATEST USER DIRECTION (supersedes the older strict quality prerequisites below):
+"不用那麼嚴格完成了，就是趕快做完上傳".
+The same controller now uses complete-first mode: each episode gets 640,000
+actual environment training steps, one full-source official rollout and no
+quality-only fitting/training retry loop. Strict alignment/contact/grasp success
+is not a submission prerequisite and is not claimed. Own reconstruction lineage,
+fresh policy origin, zero object assistance, finite frame-complete recordings and
+unchanged official submission tools remain mandatory. All 20 valid outputs trigger
+packing, preflight, GitHub push and all-six Kaggle upload automatically. GUI and
+terminal report ready-for-submission separately from strict completion.
+
 Live Kaggle audit: all 29 previously submitted files across six competitions
 have status ERROR and errorDescription "Submission has been administratively
 invalidated". The API supplies no more specific administrative reason. Historical

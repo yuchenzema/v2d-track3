@@ -14,9 +14,17 @@ trajectories, even when public scans exist. The historical geometry, texture,
 marker-template and actor lineage used public scans and is excluded from the
 new evaluation-only run. Original artifacts and receipts remain archived.
 The current serial controller rebuilds geometry from evaluation RGB and metric
-depth, rechecks every source frame, and trains fresh policies. Historical EP38
+depth and trains fresh policies. Historical EP38
 training (1,280,000 steps per trial) is not compliant new-run progress.
 See `submission_docs/own-geometry-correction-20261102.txt`.
+
+Latest user instruction: "不用那麼嚴格完成了，就是趕快做完上傳".
+Complete-first mode now trains each episode once to 640,000 environment steps,
+records one complete official policy rollout, and advances without waiting for
+strict source alignment, contact or grasp success. These quality checks remain
+diagnostic; they do not count as passed or grant strict completion. Own geometry,
+fresh actors, finite full-source trajectories and submission integrity remain
+required. Public validation stays excluded. The same serial service owns the work.
 
 The evaluation roster is:
 `1,3,5,6,8,10,14,15,16,19,20,25,28,30,32,33,35,36,37,38`.
@@ -69,8 +77,8 @@ can still be queried without uploading:
 ```
 
 `own_submission_queue.py` runs inside the same serial controller. Once all 20
-own-geometry policies pass the existing local motion/contact/grasp checks and
-official rollout provenance checks, it packs and validates the cohort, pushes
+own-geometry policies finish actual training and official rollout provenance
+checks, it packs and validates the cohort, pushes
 the producing commit and submits to all six metrics. No extra approval or new
 worker is required. Existing receipts prevent duplicate uploads. Exact-match
 strict completion remains separate. `refresh_kaggle_status.py` refreshes current

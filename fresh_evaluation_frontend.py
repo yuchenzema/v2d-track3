@@ -149,6 +149,8 @@ def prepare(source,episode):
         evaluation_ground_truth_used=False,purpose='Fresh source-video measurements, not historical object-pose replay')
     if own:cfg.update(own_geometry_required=True,geometry_source='evaluation_rgb_depth',
                       photometric_refinement=True,source_feature_pose_enabled=True)
+    from fast_submission_policy import enabled as fast_submission_enabled
+    if own and fast_submission_enabled():cfg['fast_submission']=True
     save(root/'episode-config.json',cfg)
     if own and not (root/'research/source-instance-initialization.json').is_file():
         from source_instance_prompts import prepare as prepare_instances

@@ -140,7 +140,16 @@ def generic_reconstruction(root,cfg):
             args[args.index('--reference_frame')+1]=str(geometry['objects'][name]['reference_frame'])
         shutil.copy2(BASE/'batch_pose_memory.py',root/'scripts/pose_memory.py')
         index=args.index('-m');args[index:index+2]=['/episode/scripts/pose_memory.py']
-        args+=['--reregister_iou_thresh','0.45']
+        identity=rec/'object_poses'/f'{name}.resume-identity.json'
+        if cfg.get('fast_submission') and not identity.exists():
+            args+=['--reregister_iou_thresh','0.0','--register_iteration','2','--track_iteration','1']
+        elif identity.exists() and cfg.get('fast_submission'):
+            # Continue the identical interrupted input recipe, preserving its
+            # saved poses and per-frame provenance instead of restarting it.
+            previous=json.loads(identity.read_text())['arguments']
+            for flag in ['--reregister_iou_thresh','--register_iteration','--track_iteration']:
+                if flag in previous:args+=[flag,previous[previous.index(flag)+1]]
+        else:args+=['--reregister_iou_thresh','0.45']
         docker(args,root/f'logs/poses-{name}.log')
     print(cfg['sequence'],'camera and own reconstructed object poses ready' if cfg.get('own_geometry_required') else 'camera and public-asset poses ready',flush=True)
     if not (rec/'scene_motion_physical.npz').exists():run([PY,str(BASE/'batch_generic_finish.py'),'--run',str(root)],root/'logs/generic-scene-refinement.log')

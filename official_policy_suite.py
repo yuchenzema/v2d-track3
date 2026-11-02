@@ -61,7 +61,8 @@ def evaluate_candidate(root,checkpoint,container):
     # is declared above for the legacy HandPose schema used by these episodes.
     verify='import hashlib,json;from pathlib import Path;d=json.loads('+repr(json.dumps(kit_files))+');r=Path('+repr(container_kit)+');assert all(hashlib.sha256((r/p).read_bytes()).hexdigest()==h for p,h in d.items())'
     _docker(['exec',container,'python','-c',verify],root/'logs/official-kit-verification.log')
-    labels=[('self16',16)]+[(f'repeat{i:02d}',1) for i in range(1,7)]+[('recorded',1)]
+    labels=([('recorded',1)] if cfg.get('official_recorded_only') else
+            [('self16',16)]+[(f'repeat{i:02d}',1) for i in range(1,7)]+[('recorded',1)])
     for label,worlds in labels:
         result=folder/label;result.mkdir(exist_ok=True)
         parquet=result/f'episode_{ep:06d}.parquet';report=result/f'episode_{ep:06d}.json'

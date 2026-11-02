@@ -91,6 +91,7 @@ def prepare():
         cfg.update(own_geometry_required=True,dataset_split='evaluation',
                    own_training_continuation_allowed=job.get('own_training_continuation_allowed',False),
                    own_training_maximum_steps=job.get('own_training_maximum_steps',cfg['training_budget']))
+    if job.get('fast_submission'):cfg.update(fast_submission=True,official_recorded_only=True)
     if job.get('actor_transfer'):
         transfer=dict(job['actor_transfer']);seed=root/'transfer_seed/policy.safetensors'
         seed.parent.mkdir(exist_ok=True);shutil.copy2(transfer['source_checkpoint'],seed)
@@ -193,6 +194,12 @@ def main():
         assert actual_hashes==requested_hashes,'Queued scientific code changed before episode execution; schedule a fresh generation'
         save(root/'research/job-execution-inputs.json',dict(updated_utc=utc(),source_code_hashes=actual_hashes,
              generation=generation,request=str(args.request),resumed_frozen_inputs=(root/'coherent-input-checksums.json').exists()))
+    if job.get('fast_submission'):
+        from fast_policy_execution import run as fast_execute
+        result=fast_execute(root,job,container,w.status)
+        verify(ep)
+        save(args.request.with_suffix('.result.json'),dict(result,all_pipeline_stages_executed=True,episode_done=False,strict_completion_granted=False))
+        return
     if job.get('approved_source_cad_run'):
         from install_source_cad_reference import install as install_approved
         install_approved(root,job['approved_source_cad_run'])

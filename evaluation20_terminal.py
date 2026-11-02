@@ -190,6 +190,18 @@ def snapshot(out):
     if experimental.get('run'):
         cfg=read(Path(experimental['run'])/'episode-config.json');count=recorded_steps(experimental['run'])
         if count and cfg.get('episode') in EPISODES:history[str(cfg['episode'])]=max(count,history.get(str(cfg['episode']),0))
+    fast=read(out/'fast-evaluation-status.json')
+    ready=[int(ep) for ep,row in fast.get('episodes',{}).items() if row.get('status')=='ready_for_submission']
+    for ep,row in fast.get('episodes',{}).items():
+        if row.get('run'):
+            count=recorded_steps(row['run'])
+            if count:history[str(ep)]=max(count,history.get(str(ep),0))
+    if state.get('status')=='fast_submission_running':
+        stage=state.get('phase') or stage
+        progress={}
+        failure=None
+        failures=[row.get('error') for row in fast.get('episodes',{}).values() if row.get('status')=='execution_error']
+        if failures:failure='尚待修復的執行錯誤（其他集繼續）：'+str(failures[0])
     return dict(updated_utc=now(), scope='evaluation_only', active_episode=active,
                 stage=stage, state=state.get('status'), run=run, cad_progress=progress,
                 inspected=sum(bool(r) for r in results.values()),
@@ -202,10 +214,15 @@ def snapshot(out):
                 pilot_validation=pilot_validation(out),
                 submission_replay={} if own else submission,
                 own_geometry_required=own,
+                submission_ready_episodes=ready,submission_ready_count=len(ready),
+                complete_first=read(out/'own-geometry-policy.json').get('submission_mode')=='complete_first',
                 kaggle_scores=kaggle,
                 kaggle_comparison=comparison,
                 blocking_failure=failure, health=health.get('status'),
-                public_status=public.get('status'), quality_gates_unchanged=True)
+                submission_cohort_completed=bool(state.get('submission_cohort_completed')),
+                public_status=public.get('status'),
+                quality_gates_unchanged=read(out/'own-geometry-policy.json').get('submission_mode')!='complete_first',
+                submission_integrity_gates_unchanged=True)
 
 
 def export_failures(out):
@@ -240,6 +257,7 @@ def render(report):
         f"[{report['updated_utc']}] Evaluation 20 本機進度（不呼叫模型）",
         f"目前 episode={report['active_episode']}；階段={report['stage'] or report['state']}{progress}",
         f"CAD 已審核 {report['inspected']}/20；來源局部檢查通過 {report['source_locally_passed']}/20；嚴格完成 {report['strict_completion_count']}/20",
+        (f"優先提交模式：可提交 {report.get('submission_ready_count',0)}/20；不再等待嚴格完成。" if report.get('complete_first') else ''),
         (f"新版官方重評 {len(report.get('submission_replay',{}).get('episodes',{}))}/20；狀態={report.get('submission_replay',{}).get('status')}。" if report.get('submission_replay') else ''),
         (('Kaggle：舊提交已由管理端作廢 '+str(report['kaggle_scores']['invalidated'])+'/6，目前無有效成績。' if report['kaggle_scores'].get('invalidated') else 'Kaggle 有效評分 '+str(report['kaggle_scores']['completed'])+'/6：'+', '.join(f"{r['name']}={r['score']:.5f}{r['unit']}" for r in report['kaggle_scores']['metrics'] if r['score'] is not None)) if report.get('kaggle_scores') else ''),
         (f"最新 Kaggle 候選已評分 {report['kaggle_comparison']['completed']}/6：改善 {report['kaggle_comparison']['improved']} 項、持平 {report['kaggle_comparison']['unchanged']} 項、退步 {report['kaggle_comparison']['regressed']} 項；六項全部提升={report['kaggle_comparison']['all_six_strictly_improved']}。" if report.get('kaggle_comparison') else ''),
@@ -299,6 +317,9 @@ def main():
                     next_report = current+args.interval
                 if report['strict_completion_count'] == 20:
                     print('20/20 嚴格完成證據已通過檢查。', flush=True)
+                    return
+                if report.get('submission_cohort_completed'):
+                    print('20/20 policy 軌跡已完成；提交紀錄見 GUI 與 own-submission-status.json。',flush=True)
                     return
                 if current >= next_services:
                     paused = read(OUT.parent/'user-pause.json').get('status') == 'paused_by_user'

@@ -651,6 +651,11 @@ def collect():
         experimental_job=human_match_loop.get('active_optimization') or {}
         if str(human_match_loop.get('status','')).startswith('submission_'):
             hero=human_match_loop.get('phase','Official submission replay and packaging. Strict completion unchanged.')
+        elif human_match_loop.get('status')=='fast_submission_running':
+            from evaluation20_terminal import recorded_steps
+            count=recorded_steps(experimental_job['run']) if experimental_job.get('run') else 0
+            label=f"Evaluation {experimental_job['episode']:06d}: " if experimental_job.get('episode') is not None else ''
+            hero=f"{label}{human_match_loop.get('phase','complete-first submission')}. Actual training steps {count or 0}."
         elif experimental_job.get('experimental_only'):
             experimental_ep=experimental_job['episode']
             hero=f"Evaluation {experimental_ep:06d} experimental pilot: {human_match_loop.get('phase','physical reference preparation')}. Not strict completion."
@@ -702,6 +707,15 @@ def collect():
                 policy_training_steps=recorded_steps(current_run) if current_run else 0,
                 report=artifact(queue_dir/'source-cad-status.json'),submission_ready=False,
                 submission_uploaded=read_json(queue_dir/'own-submission-status.json',{}).get('status')=='submitted')
+            fast=read_json(queue_dir/'fast-evaluation-status.json',{})
+            if fast.get('mode')=='complete_first':
+                pipeline_execution.update(complete_first=True,active_stage=human_match_loop.get('phase'),
+                    submission_ready_count=sum(r.get('status')=='ready_for_submission' for r in fast.get('episodes',{}).values()),
+                    report=artifact(queue_dir/'fast-evaluation-status.json'))
+                for ep,row in fast.get('episodes',{}).items():
+                    if ep in own_rows and row.get('run'):
+                        own_rows[ep].update(policy_training_steps=recorded_steps(row['run']) or 0,
+                            official_policy_rollout=row.get('status','pending'))
         from kaggle_progress import current_scores,latest_comparison
         kaggle=current_scores(BATCH)
         comparison=latest_comparison(BATCH)

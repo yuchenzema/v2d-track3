@@ -285,10 +285,14 @@ def reviewed_masks():
             vision.docker(command,ROOT/'logs/sam2-reviewed.log')
     refine_masks()
     if read(ROOT/'episode-config.json').get('camera_odometry_method')=='sift_pnp_metric':
-        from source_mask_quality import inspect_and_repair
+        from source_mask_quality import inspect_and_repair,audit as audit_masks
         command=read(BASE/'runs/episode_000005_newton_20261015/research/sam2-command.json')[1:]
         command=[x.replace(str(BASE/'runs/episode_000005_newton_20261015'),str(ROOT)) for x in command]
-        inspect_and_repair(ROOT,lambda:rerun_masks(command))
+        if read(ROOT/'episode-config.json').get('fast_submission'):
+            report=audit_masks(ROOT)
+            save(ROOT/'research/source-mask-quality.json',dict(latest=report,attempts=[dict(attempt=0,**report)],
+                quality_is_diagnostic=True,strict_completion_granted=False))
+        else:inspect_and_repair(ROOT,lambda:rerun_masks(command))
     alignment=ROOT/'reconstruction/stereo-depth-alignment.json'
     cap_masks=read(ROOT/'research/source-cap-mask-refinement.json',{}).get('masks_sha256')
     background=ROOT/'reconstruction/source-background-review.json'
