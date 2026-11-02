@@ -28,9 +28,10 @@ from contour_pose_refinement import propose as contour_pose_proposal,face_flip_p
 from source_marker_pose_proposals import load_reviews,bootstrap as reviewed_marker_bootstrap,checked_observations
 from source_marker_templates import load as load_marker_templates
 from source_feature_pose import track as feature_pose_proposal,penalty as feature_pose_penalty
+from source_forearm_occlusion import attach as attach_source_forearms
 
 VERSION = 5
-ALGORITHM_HASHES={name:digest(BASE/name) for name in ['source_cad_alignment.py','source_cap_masks.py','source_feature_pose.py','source_marker_templates.py','source_marker_pose_proposals.py','source_photometric_reference.py','source_static_joint_fit.py','source_final_scene_audit.py','metric_surface_localisation.py','source_mask_rasterizer.py','source_mask_rasterizer.c','sphere_marker_reference.py','contour_pose_refinement.py']}
+ALGORITHM_HASHES={name:digest(BASE/name) for name in ['source_cad_alignment.py','source_forearm_occlusion.py','source_cap_masks.py','source_feature_pose.py','source_marker_templates.py','source_marker_pose_proposals.py','source_photometric_reference.py','source_static_joint_fit.py','source_final_scene_audit.py','metric_surface_localisation.py','source_mask_rasterizer.py','source_mask_rasterizer.c','sphere_marker_reference.py','contour_pose_refinement.py']}
 LIMITS = dict(minimum_visible_pixels=60, minimum_iou=.90,
               maximum_centroid_error_px=3., maximum_boundary_error_px=3.,
               maximum_sphere_error_px=3.)
@@ -78,6 +79,8 @@ def save_trajectory(path, motion):
 
 def human_mask(hands, frame):
     mask = np.zeros((768, 1024), np.uint8)
+    if 'forearm_masks' in hands:
+        mask|=cv2.resize(hands['forearm_masks'][frame],(1024,768),interpolation=cv2.INTER_NEAREST)
     for side in range(2):
         if not hands['observed'][frame, side]:
             continue
@@ -305,6 +308,7 @@ def fit(source, root, maxfev=100, repair_only=False):
     records=json.loads(records_path.read_text()) if records_path.exists() else []
     if checkpoint.exists():motion['object_to_world']=np.load(checkpoint)['object_to_world']
     intr=json.loads((rec/'camera_intrinsics.json').read_text());hands=np.load(rec/'hand_measurements.npz')
+    if cfg.get('validated_video_pipeline'):hands=attach_source_forearms(root,hands,count,len(cfg['objects']))
     marker_reviews,marker_review_binding=load_reviews(cfg,rec)
     reviewed_marker_objects={row['object'] for row in marker_reviews}
     save(root/'research/source-marker-review.json',dict(binding=marker_review_binding,reviewed_objects=sorted(reviewed_marker_objects),
@@ -568,6 +572,7 @@ def fit(source, root, maxfev=100, repair_only=False):
                  algorithm_files_sha256=ALGORITHM_HASHES,
                  final_scene_occlusion_rechecked=final_audit['all_object_frames_rechecked'],
                  final_scene_audit=str(root/'research/cad-final-scene-audit.json'),
+                 source_forearm_occlusion_report=str(root/'research/source-forearm-occlusion.json') if cfg.get('validated_video_pipeline') else None,
                  frames_report_sha256=digest(records_path),
                  status='needs_alignment_improvement',source_frames=count,object_frames_checked=len(records),
                  thresholds=LIMITS,all_source_frames_checked=len(records)==count*len(cfg['objects']),

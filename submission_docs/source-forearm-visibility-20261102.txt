@@ -1,0 +1,31 @@
+Source visibility repair, 2026-11-02
+
+Manual inspection of episode 25 source RGB/mask panels at frames 65, 84, 97,
+103 and 148 showed the CAD scorer excluded palms/fingers but still penalized
+CAD pixels hidden behind visible forearms. This could displace a correctly
+resting board while the other board was manipulated.
+
+The repair derives additional foreground solely from observed hand landmarks
+and independent source depth (stereo-aligned dense depth, or stereo fallback).
+It uses a hand-connected, forearm-directed image corridor and foreground depth
+relative to the visible hand. Missing/invalid depth cannot create an occluding
+pixel. Existing SAM source foreground for every object is protected. No CAD
+pose, rendered object mask or pose ground truth is used to derive the mask.
+Original source RGB, depth and object masks remain unchanged.
+
+The same source-derived visibility is used by per-frame CAD fitting, source
+feature proposals, static-segment fitting, final all-frame scene recheck and
+the exported source-overlay video. Each derived mask and its source depth,
+hand measurements and source object-mask hashes are recorded. These are source
+depth estimates, not segmentation ground truth or proof of episode completion.
+
+On unchanged episode-25 poses, measured visibility correction changed the
+wooden_piece_2 IoU at frame 84 from 0.428 to 0.874, and frame 97 from 0.316 to
+0.759. Some frames remain badly aligned; complete source fitting and every-frame
+depth/marker checks remain mandatory. All source image/depth/centroid/sphere
+thresholds, policy admission thresholds and final motion/contact gates remain
+unchanged. Unobservable object frames do not receive invented observations.
+
+This code change justifies another source-repair pass in the existing serial
+controller. Retry counts are retained. Training/evaluation work is never run
+in parallel with that source-repair pass.
