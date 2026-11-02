@@ -3,10 +3,18 @@ import tempfile,json
 from pathlib import Path
 import cv2
 import numpy as np
-from source_mask_quality import contamination,repair_points,merge_repair_prompt,audit,inspect_and_repair
+from source_mask_quality import contamination,repair_points,merge_repair_prompt,audit,inspect_and_repair,reinforce_foreground
 
 
 class MaskLeakageTests(unittest.TestCase):
+    def test_missing_foreground_is_reconditioned_from_matching_rgb_without_painting_mask(self):
+        image=np.full((40,40,3),210,np.uint8);image[20,24]=[0,0,0]
+        anchor=dict(x=20.,y=20.);prompts=dict(prompts=[dict(object_id=1,frame_index=0,points=[anchor],point_labels=[1])])
+        added=reinforce_foreground(prompts,1,0,image,[anchor])
+        self.assertGreater(added,0);row=prompts['prompts'][0]
+        self.assertIn(anchor,row['points']);self.assertNotIn(dict(x=24.,y=20.),row['points'])
+        self.assertEqual(reinforce_foreground(prompts,1,0,image,[anchor]),0)
+        self.assertEqual(row['point_labels'],[1]*len(row['points']))
     def coloured_hole_fixture(self,root):
         rec=root/'reconstruction';(rec/'frames').mkdir(parents=True);(rec/'masks/1').mkdir(parents=True)
         (root/'episode-config.json').write_text(json.dumps(dict(frames=1,objects=['mini_sweeper'])))

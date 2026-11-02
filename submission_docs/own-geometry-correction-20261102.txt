@@ -70,3 +70,10 @@ backward propagation still assigned most lid pixels to the pot. Revision v3
 adds explicit RGB-only pot-wall/handle and lid-surface positives at frame0,
 conditioned jointly with separated frame150. Both original frames are hashed.
 Zero overlap alone is not considered correct identity or an episode pass.
+
+Foreground-hint retry repair: source_mask_quality v4 retains missing reviewed
+foreground points and adds nearby RGB/Lab-matched source hints (radius <=5.66px,
+Lab distance <=16). It re-runs SAM with cross-instance negatives; no mask pixels
+are painted and the original acceptance checks remain. Previous reviews and
+actual revised prompts are retained/bound together. Unchanged foreground-hint
+retries fail explicitly rather than consuming the same retry budget silently.

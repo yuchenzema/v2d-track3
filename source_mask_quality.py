@@ -10,7 +10,7 @@ import numpy as np
 from improvement_common import save,utc,digest
 
 WHITE_OBJECTS={'white_pot','white_pot_lid','plastic_dish_rack'}
-VERSION=3
+VERSION=4
 
 
 def merge_repair_prompt(prompts,body,frame,repair):
@@ -59,6 +59,30 @@ def repair_points(image,mask,other_masks):
     return dict(points=points,point_labels=point_labels)
 
 
+def reinforce_foreground(prompts,body,frame,image,missing):
+    """Recondition SAM locally around a retained, source-reviewed foreground.
+
+    This adds measured RGB-similar hints, never paints a mask or deletes a
+    failing annotation. Cross-instance conditioning supplies the corresponding
+    negatives to the other object when propagation is rerun.
+    """
+    prior=next((p for p in prompts['prompts'] if p['object_id']==body and p['frame_index']==frame and p.get('points')),None)
+    if prior is None:return 0
+    lab=cv2.cvtColor(image,cv2.COLOR_BGR2LAB).astype(float);height,width=lab.shape[:2]
+    labels=prior.setdefault('point_labels',[1]*len(prior['points']));added=0
+    for anchor in missing:
+        x,y=np.rint([anchor['x'],anchor['y']]).astype(int)
+        if not (0<=x<width and 0<=y<height):continue
+        for dy in [-4,0,4]:
+            for dx in [-4,0,4]:
+                xx,yy=x+dx,y+dy
+                if not (0<=xx<width and 0<=yy<height):continue
+                if np.linalg.norm(lab[yy,xx]-lab[y,x])>16:continue
+                if any(np.hypot(xx-p['x'],yy-p['y'])<2 for p in prior['points']):continue
+                prior['points'].append(dict(x=float(xx),y=float(yy)));labels.append(1);added+=1
+    return added
+
+
 def audit(root):
     root=Path(root);rec=root/'reconstruction';cfg=json.loads((root/'episode-config.json').read_text());hands=np.load(rec/'hand_measurements.npz');failures=[]
     prompts=[]
@@ -95,6 +119,12 @@ def inspect_and_repair(root,rerun):
         if not report['failures']:return
         if attempt==2:raise RuntimeError(f"Source mask contamination or foreground/background-hint failure persists in {report['failure_count']} object-frames")
         prompts=json.loads((rec/'sam2_prompts.json').read_text())
+        before=digest(rec/'sam2_prompts.json')
+        foreground_reinforcement=0
+        for row in report['failures']:
+            if row.get('missing_reviewed_foreground_points'):
+                image=cv2.imread(str(rec/f"frames/{row['frame']:06d}.png"))
+                foreground_reinforcement+=reinforce_foreground(prompts,row['body'],row['frame'],image,row['missing_reviewed_foreground_points'])
         for body in sorted({row['body'] for row in report['failures']}):
             # A hole or other reviewed hint must be honoured by the full prompt;
             # a white-component heuristic is invalid for coloured objects.
@@ -115,4 +145,17 @@ def inspect_and_repair(root,rerun):
                 merge_repair_prompt(prompts,body,frame,repair_points(image,mask,other))
         prompts.update(provenance='Source-only reviewed foreground/background preservation and white-object wooden-table exclusion where needed; no pose GT used')
         save(rec/f'sam2_prompts.before_auto_repair_{attempt}.json',json.loads((rec/'sam2_prompts.json').read_text()))
-        save(rec/'sam2_prompts.json',prompts);rerun()
+        save(rec/'sam2_prompts.json',prompts)
+        if digest(rec/'sam2_prompts.json')==before and any(row.get('missing_reviewed_foreground_points') for row in report['failures']):
+            raise RuntimeError('No new source-evidence repair was proposed; refusing an unchanged SAM retry')
+        if foreground_reinforcement:
+            save(root/f'research/foreground-hint-reinforcement-{attempt}.json',dict(
+                foreground_hints_added=foreground_reinforcement,original_foreground_hints_retained=True,
+                masks_painted=False,maximum_source_neighborhood_radius_px=float(np.sqrt(32)),
+                maximum_Lab_color_distance=16.,geometry_or_pose_used=False))
+        # Preserve the previous review, then bind its source-only automated
+        # additions to the actual prompt file consumed by SAM.
+        review=rec/'source-prompt-review.json'
+        if review.is_file():save(rec/f'source-prompt-review.before_auto_repair_{attempt}.json',json.loads(review.read_text()))
+        save(review,prompts)
+        rerun()
