@@ -64,6 +64,25 @@ def recorded_steps(run):
     return None
 
 
+def pilot_validation(out):
+    """Keep finished training and failed acceptance visibly separate."""
+    experiment=read(Path(out)/'experimental-training-status.json')
+    if not experiment.get('run'):return {}
+    run=Path(experiment['run']);cfg=read(run/'episode-config.json')
+    strict=read(run/'research/strict-human-match.json')
+    grasp=strict.get('post_training_grasp_acceptance') or {}
+    bound=(bool(strict.get('checkpoint_sha256')) and grasp.get('policy_inference') is True
+           and grasp.get('checkpoint_sha256')==strict['checkpoint_sha256']
+           and grasp.get('official_trajectory_sha256')==strict.get('official_render_binding',{}).get('official_trajectory_sha256'))
+    return dict(episode=cfg.get('episode'),run=str(run),status=experiment.get('status'),
+        training_steps=recorded_steps(run) or 0,
+        training_finished=(run/'flash_chord_coherent_actor_transfer/TRAINING_COMPLETED').exists(),
+        policy_grasp_passed=grasp.get('all_grasps_passed') if bound else None,
+        contact_validation_failed=strict.get('contact_validation_failed'),
+        failed_source_frames=strict.get('failed_frame_count'),
+        source_frames=strict.get('source_frames'),strict_completion_granted=False)
+
+
 def configure(out):
     """Change scope, never source/physics thresholds or completion evidence."""
     policy = read(out/'validated-pipeline-policy.json')
@@ -161,11 +180,13 @@ def snapshot(out):
         if measured is not None:steps=measured
     history={}
     for ep,attempt in experimental.get('attempts',{}).items():
-        count=recorded_steps(attempt.get('run'))
-        if count:history[ep]=count
+        versions=[attempt,*attempt.get('source_attempts',{}).values()]
+        runs={entry.get('run') for version in versions for entry in [version,*version.get('run_history',[])] if entry.get('run')}
+        counts=[recorded_steps(path) or 0 for path in runs]
+        if any(counts):history[ep]=max(counts)
     if experimental.get('run'):
         cfg=read(Path(experimental['run'])/'episode-config.json');count=recorded_steps(experimental['run'])
-        if count and cfg.get('episode') in EPISODES:history[str(cfg['episode'])]=count
+        if count and cfg.get('episode') in EPISODES:history[str(cfg['episode'])]=max(count,history.get(str(cfg['episode']),0))
     return dict(updated_utc=now(), scope='evaluation_only', active_episode=active,
                 stage=stage, state=state.get('status'), run=run, cad_progress=progress,
                 inspected=sum(bool(r) for r in results.values()),
@@ -175,6 +196,7 @@ def snapshot(out):
                 strict_completed=done, strict_completion_count=len(done),
                 learner_pids=sorted(learners), training_steps=steps,
                 recorded_training_steps_by_episode=history,
+                pilot_validation=pilot_validation(out),
                 submission_replay=submission,
                 kaggle_scores=kaggle,
                 kaggle_comparison=comparison,
@@ -220,6 +242,7 @@ def render(report):
         (f"Policy learner 已啟動，steps={report['training_steps'] if report['training_steps'] is not None else '初始化／編譯中，等待首筆回報'}，PID={report['learner_pids']}" if report['learner_pids']
          else f"目前沒有 policy 在訓練；此 run 已記錄訓練 steps={report['training_steps'] or 0}。"),
         '已記錄的實驗訓練：'+(', '.join(f"episode {ep}={steps:,} steps" for ep,steps in report.get('recorded_training_steps_by_episode',{}).items()) or '尚無；品質驗收另計。'),
+        (f"最新實驗 episode {report['pilot_validation']['episode']}：訓練 {'完成' if report['pilot_validation']['training_finished'] else '尚未完成'}；policy 抓取={'通過' if report['pilot_validation']['policy_grasp_passed'] is True else '未通過' if report['pilot_validation']['policy_grasp_passed'] is False else '待驗證'}；來源運動失敗幀={report['pilot_validation']['failed_source_frames']}；接觸檢查={'未通過' if report['pilot_validation']['contact_validation_failed'] is True else '通過' if report['pilot_validation']['contact_validation_failed'] is False else '待驗證'}。" if report.get('pilot_validation') else ''),
         f"阻塞：{str(report['blocking_failure'] or '目前沒有新的執行錯誤。')[-1600:]}",
         f"GUI http://localhost:8768；健康狀態={report['health']}；public 已排除。",
     ])

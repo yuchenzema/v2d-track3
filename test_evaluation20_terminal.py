@@ -10,6 +10,26 @@ from improvement_common import digest
 
 
 class TerminalAutomationTests(unittest.TestCase):
+    def test_finished_training_does_not_hide_failed_bound_grasp(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out=Path(directory)/'queue';out.mkdir();run=Path(directory)/'pilot'
+            (run/'flash_chord_coherent_actor_transfer').mkdir(parents=True)
+            (run/'flash_chord_coherent_actor_transfer/TRAINING_COMPLETED').write_text('done')
+            terminal.write(out/'experimental-training-status.json',dict(run=str(run),status='pilot_finished'))
+            terminal.write(run/'episode-config.json',dict(episode=38))
+            strict=dict(checkpoint_sha256='actor',contact_validation_failed=True,failed_frame_count=263,
+                official_render_binding=dict(official_trajectory_sha256='rollout'),
+                post_training_grasp_acceptance=dict(policy_inference=True,checkpoint_sha256='actor',
+                    official_trajectory_sha256='rollout',all_grasps_passed=False))
+            terminal.write(run/'research/strict-human-match.json',strict)
+            result=terminal.pilot_validation(out)
+            self.assertTrue(result['training_finished'])
+            self.assertIs(result['policy_grasp_passed'],False)
+            self.assertFalse(result['strict_completion_granted'])
+            strict['post_training_grasp_acceptance']['checkpoint_sha256']='another actor'
+            terminal.write(run/'research/strict-human-match.json',strict)
+            self.assertIsNone(terminal.pilot_validation(out)['policy_grasp_passed'])
+
     def test_blocked_export_keeps_last_episode_and_completed_training_steps(self):
         with tempfile.TemporaryDirectory() as directory:
             out=Path(directory)/'queue';out.mkdir();run=Path(directory)/'pilot'
