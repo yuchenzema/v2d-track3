@@ -15,6 +15,7 @@ from rollout_collision_validation import collision_verified
 
 PY=BASE/'.venv-submission/bin/python'
 KIT=BASE/'submission_kit_20261102'
+DESCRIPTION='Evaluation-only reconstructed geometry and actual trained-policy rollouts; no supplied scans'
 
 
 def read(path):
@@ -158,7 +159,7 @@ def run(out,focus):
         commands=[['tools/pack_submission.py','--track','track_3','--results',str(results),'--meshes',str(meshes),
             '--code-commit',f'https://github.com/yuchenzema/v2d-track3/commit/{commit}','-o',str(package)],
             ['tools/preflight.py','--track','track_3','--results',str(results)],
-            ['submit/v2d_submit.py',str(package),'--track','track_3','--dry-run']]
+            ['submit/v2d_submit.py',str(package),'--track','track_3','-m',DESCRIPTION,'--dry-run']]
         status.update(status='packing_and_preflight',destination=str(destination));save(out/'own-submission-status.json',status)
         for index,arguments in enumerate(commands):
             if read(BATCH/'user-pause.json').get('status')=='paused_by_user':return False
@@ -173,7 +174,7 @@ def run(out,focus):
         status.update(status='uploading',file=str(package),sha256=digest(package));save(out/'own-submission-status.json',status)
         with (destination/'upload.log').open('a') as log:
             subprocess.run([str(PY),str(KIT/'submit/v2d_submit.py'),str(package),'--track','track_3',
-                '-m','Evaluation-only reconstructed geometry and actual trained-policy rollouts; no supplied scans',
+                '-m',DESCRIPTION,
                 '--wait','--receipt',str(receipt)],cwd=KIT,stdout=log,stderr=subprocess.STDOUT,check=True)
         status.update(status='submitted',receipt=str(receipt),updated_utc=utc());save(out/'own-submission-status.json',status)
     return False
