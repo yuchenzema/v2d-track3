@@ -1,0 +1,286 @@
+diff --git a/reconstruction/modules/v2d_foundation_pose/lib/foundation_pose_tracker.py b/reconstruction/modules/v2d_foundation_pose/lib/foundation_pose_tracker.py
+index 0f5999da..a5a3d775 100644
+--- a/reconstruction/modules/v2d_foundation_pose/lib/foundation_pose_tracker.py
++++ b/reconstruction/modules/v2d_foundation_pose/lib/foundation_pose_tracker.py
+@@ -31,6 +31,7 @@ from v2d.common.datatypes import CameraIntrinsics, DepthImage, Mask, Transform3d
+ from v2d.common.datatypes import Image as V2dImage
+ from v2d.mesh.lib.mesh import Mesh
+ from v2d.foundation_pose.lib.backends import DEFAULT_BACKEND, create_predictor_backend
++from v2d.foundation_pose.lib.pose_frames import pose_for_centered_mesh
+ 
+ _FP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'FoundationPose')
+ sys.path.insert(0, _FP_DIR)
+@@ -375,7 +376,8 @@ class FoundationPoseTracker:
+         """Render the mesh at `pose` and return IoU with the observed mask."""
+         K = intrinsics.to_matrix()
+         H, W = intrinsics.height, intrinsics.width
+-        pose_mat = torch.as_tensor(pose.to_matrix()[None], device='cuda', dtype=torch.float)
++        centered_pose=pose_for_centered_mesh(pose.to_matrix(),self._est.model_center)
++        pose_mat = torch.as_tensor(centered_pose[None], device='cuda', dtype=torch.float)
+ 
+         with torch.no_grad():
+             _, rendered_depth, _ = nvdiffrast_render(
+@@ -499,7 +501,8 @@ class FoundationPoseTracker:
+         """
+         K = intrinsics.to_matrix()
+         H, W = intrinsics.height, intrinsics.width
+-        pose_mat = torch.as_tensor(pose.to_matrix()[None], device='cuda', dtype=torch.float)
++        centered_pose=pose_for_centered_mesh(pose.to_matrix(),self._est.model_center)
++        pose_mat = torch.as_tensor(centered_pose[None], device='cuda', dtype=torch.float)
+ 
+         with torch.no_grad():
+             _, rendered_depth, _ = nvdiffrast_render(
+diff --git a/reconstruction/modules/v2d_sam2/lib/video_to_masks.py b/reconstruction/modules/v2d_sam2/lib/video_to_masks.py
+index bb990ecf..9d706e26 100644
+--- a/reconstruction/modules/v2d_sam2/lib/video_to_masks.py
++++ b/reconstruction/modules/v2d_sam2/lib/video_to_masks.py
+@@ -6,7 +6,10 @@ Can be called directly from command line or imported as a function.
+ """
+ from v2d.sam2.lib.sam2_utils import build_sam2_video_predictor_low_mem
+ from v2d.sam2.lib.datatypes import Sam2Prompts
++from v2d.sam2.lib.bidirectional_prompt_plan import propagation_passes, prompt_distance
++from v2d.sam2.lib.instance_masks import exclusive_instance_masks,cross_instance_negative_prompts
+ import argparse
++import hashlib
+ import json
+ import os
+ from pathlib import Path
+@@ -74,45 +77,67 @@ def video_to_masks(
+     attention reads the memory through fp32 linear layers. Pass 1 happens to
+     skirt the issue with a single ref-frame prompt; pass 2 triggers it.
+     """
+-    with open(prompts_path, "r") as f:
+-        prompts = Sam2Prompts.from_dict(json.load(f))
+-
++    prompt_bytes=Path(prompts_path).read_bytes()
++    prompt_data=json.loads(prompt_bytes)
++    conditioned,derived_count=(cross_instance_negative_prompts(prompt_data)
++        if prompt_data.get('cross_instance_negatives') else (prompt_data,0))
++    prompts = Sam2Prompts.from_dict(conditioned)
++    exclusive=bool(prompt_data.get('exclusive_visible_instances',False))
++    grouped={}
++    for prompt in prompts.prompts:
++        _validate_prompt(prompt)
++        grouped.setdefault(prompt.object_id,[]).append(prompt)
+     predictor = _get_predictor(weights_dir)
+ 
+     obj_frames: dict[int, dict[int, np.ndarray]] = {}
++    report={'version':3,'prompts_sha256':hashlib.sha256(prompt_bytes).hexdigest(),
++            'method':'Independent object tracks; explicit reverse/forward starts; nearest conditioning-frame direction wins','objects':{},
++            'visible_instance_ownership':'highest measured SAM logit at overlapping foreground pixels' if exclusive else 'independent binary tracks',
++            'cross_instance_negative_conditioning_requested':bool(prompt_data.get('cross_instance_negatives')),
++            'derived_cross_instance_negative_points':derived_count,
++            'ownership_adds_no_source_foreground':True}
+     with torch.inference_mode(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+-        inference_state = predictor.init_state(video_path)
+-
+-        for prompt in prompts.prompts:
+-            _validate_prompt(prompt)
+-            if prompt.mask_path:
+-                mask_path = _resolve_prompt_mask_path(prompt.mask_path, prompts_path)
+-                mask = np.asarray(Image.open(mask_path).convert("L")) > 0
+-                predictor.add_new_mask(
+-                    inference_state=inference_state,
+-                    frame_idx=prompt.frame_index,
+-                    obj_id=prompt.object_id,
+-                    mask=mask,
+-                )
+-                continue
+-
+-            box = [prompt.box.x0, prompt.box.y0, prompt.box.x1, prompt.box.y1] if prompt.box else None
+-            points = [[p.x, p.y] for p in prompt.points] if prompt.points else None
+-            point_labels = prompt.point_labels if prompt.point_labels else None
+-            predictor.add_new_points_or_box(
+-                inference_state=inference_state,
+-                frame_idx=prompt.frame_index,
+-                obj_id=prompt.object_id,
+-                points=points,
+-                labels=point_labels,
+-                box=box,
+-            )
+-
+-        for reverse in [True, False]:
+-            for frame_idx, object_ids, masks in predictor.propagate_in_video(inference_state, reverse=reverse):
+-                for i, obj_id in enumerate(object_ids):
+-                    mask_data = (masks[i, 0] > 0.0).cpu().numpy().astype(np.uint8) * 255
+-                    obj_frames.setdefault(obj_id, {})[frame_idx] = mask_data
++        for object_id,object_prompts in grouped.items():
++            frame_ids=[p.frame_index for p in object_prompts];distances={}
++            for reverse,start in propagation_passes(frame_ids):
++                # Separate states prevent one object's early prompt, or the
++                # opposite direction's cached memory, from erasing this track.
++                inference_state=predictor.init_state(video_path)
++                frame_count=int(inference_state['num_frames'])
++                for prompt in object_prompts:
++                    if prompt.mask_path:
++                        mask_path=_resolve_prompt_mask_path(prompt.mask_path,prompts_path)
++                        predictor.add_new_mask(inference_state=inference_state,frame_idx=prompt.frame_index,
++                            obj_id=object_id,mask=np.asarray(Image.open(mask_path).convert('L'))>0)
++                    else:
++                        predictor.add_new_points_or_box(inference_state=inference_state,frame_idx=prompt.frame_index,
++                            obj_id=object_id,box=[prompt.box.x0,prompt.box.y0,prompt.box.x1,prompt.box.y1] if prompt.box else None,
++                            points=[[p.x,p.y] for p in prompt.points] if prompt.points else None,
++                            labels=prompt.point_labels if prompt.point_labels else None)
++                for frame_idx,object_ids,masks in predictor.propagate_in_video(inference_state,start_frame_idx=start,reverse=reverse):
++                    for i,obj_id in enumerate(object_ids):
++                        distance=prompt_distance(frame_idx,frame_ids,reverse)
++                        if distance>distances.get(frame_idx,float('inf')):continue
++                        value=(masks[i,0].to(torch.float16).cpu().numpy() if exclusive
++                               else (masks[i,0]>0.).cpu().numpy().astype(np.uint8)*255)
++                        obj_frames.setdefault(obj_id,{})[frame_idx]=value
++                        distances[frame_idx]=distance
++                del inference_state
++            assert set(obj_frames[object_id])==set(range(frame_count)),f'Object {object_id} has missing source frames'
++            report['objects'][str(object_id)]={'frames':frame_count,'prompt_frames':frame_ids,
++                'nonempty_frames':sum(bool((mask>0).any()) for mask in obj_frames[object_id].values()),
++                'all_source_frames_propagated':True}
++
++    if exclusive:
++        overlap=[]
++        for frame_idx in range(frame_count):
++            visible,count=exclusive_instance_masks({i:frames[frame_idx] for i,frames in obj_frames.items()})
++            for object_id,mask in visible.items():obj_frames[object_id][frame_idx]=mask
++            overlap.append(count)
++        report['overlapping_foreground_pixels_before_ownership']=overlap
++        report['overlapping_foreground_pixels_after_ownership']=0
++        for object_id,frames in obj_frames.items():
++            report['objects'][str(object_id)]['nonempty_frames']=sum(bool(mask.any()) for mask in frames.values())
+ 
+     masks_path = Path(masks_dir)
+ 
+@@ -122,6 +147,8 @@ def video_to_masks(
+         for fidx in sorted(frames_dict.keys()):
+             writer.write_frame(frames_dict[fidx], stem=f"{fidx:06d}")
+         writer.close()
++    masks_path.mkdir(exist_ok=True,parents=True)
++    (masks_path/'propagation-report.json').write_text(json.dumps(report,indent=2)+'\n')
+ 
+ if __name__ == "__main__":
+     parser = argparse.ArgumentParser(description="Process video to masks using SAM2")
+diff --git a/robotic_grounding/flash_chord/src/flash_chord/runtime/object_control.py b/robotic_grounding/flash_chord/src/flash_chord/runtime/object_control.py
+index 508aee11..77e85e5f 100644
+--- a/robotic_grounding/flash_chord/src/flash_chord/runtime/object_control.py
++++ b/robotic_grounding/flash_chord/src/flash_chord/runtime/object_control.py
+@@ -111,14 +111,17 @@ def _object_control(
+             object_bid = world * bodies_per_world + object_body_ids[body_index]
+             mass += body_mass[object_bid]
+         inertia = body_inertia[bid]
+-        inertia_eff = (inertia[0, 0] + inertia[1, 1] + inertia[2, 2]) / 3.0
+ 
+         force = k_lin * (target_pos[i] - pos) - d_lin * lin_vel
+         q_err = wp.mul(target_quat[i], wp.quat_inverse(quat))
+         torque = k_ang * quat_to_rotvec(q_err) - d_ang * ang_vel
+         if mass_normalized_gains:
+             force = mass * force
+-            torque = inertia_eff * torque
++            # Angular error and velocity are world-frame vectors. Use the
++            # actual world inertia tensor so acceleration-level gains retain
++            # their meaning for thin, anisotropic objects such as a spoon.
++            rotation = wp.quat_to_matrix(quat)
++            torque = wp.mul(rotation, wp.mul(inertia, wp.mul(wp.transpose(rotation), torque)))
+         force = force + wp.vec3(0.0, 0.0, gravity * mass)
+ 
+         force = wp.vec3(
+diff --git a/robotic_grounding/flash_chord/src/flash_chord/training/checkpoint_metadata.py b/robotic_grounding/flash_chord/src/flash_chord/training/checkpoint_metadata.py
+index 18940eda..c812cf4b 100644
+--- a/robotic_grounding/flash_chord/src/flash_chord/training/checkpoint_metadata.py
++++ b/robotic_grounding/flash_chord/src/flash_chord/training/checkpoint_metadata.py
+@@ -207,7 +207,9 @@ def build_checkpoint_metadata(
+ ) -> dict[str, str]:
+     """Serialize stable, self-contained experiment metadata for a checkpoint header."""
+     metadata = {
+-        CONFIG_METADATA_KEY: json.dumps(resolved_config, sort_keys=True, separators=(",", ":")),
++        # Joint override tables are ordered: later matching rules take precedence.
++        # Sorting the resolved config can silently change the evaluation motors.
++        CONFIG_METADATA_KEY: json.dumps(resolved_config, separators=(",", ":")),
+         POLICY_SCHEMA_METADATA_KEY: json.dumps(schema, sort_keys=True, separators=(",", ":")),
+     }
+     if critic is not None:
+diff --git a/robotic_grounding/flash_chord/tests/runtime/test_object_control.py b/robotic_grounding/flash_chord/tests/runtime/test_object_control.py
+index 5e02e45e..91647b67 100644
+--- a/robotic_grounding/flash_chord/tests/runtime/test_object_control.py
++++ b/robotic_grounding/flash_chord/tests/runtime/test_object_control.py
+@@ -338,3 +338,52 @@ def test_articulation_voc_writes_targets_and_updates_a_captured_graph():
+     np.testing.assert_array_equal(captured_pos[:, 1:], updated_targets.reshape(world_count, 2))
+     np.testing.assert_array_equal(captured_vel[:, 0], -7.0)
+     np.testing.assert_array_equal(captured_vel[:, 1:], 0.0)
++
++
++@pytest.mark.parametrize("base_angle", [0.0, 0.65])
++def test_voc_stably_damps_a_thin_object_about_its_low_inertia_axis(base_angle):
++    """A spoon-like plate must settle at 100 Hz in either world orientation."""
++    import warp as wp
++    import newton
++    from flash_chord.runtime.object_control import apply_object_control
++
++    with wp.ScopedDevice("cuda:0"):
++        builder = newton.ModelBuilder()
++        newton.solvers.SolverMuJoCo.register_custom_attributes(builder)
++        builder.default_shape_cfg.density = 733.333333
++        body = builder.add_body(label="thin_tool")
++        builder.add_joint_free(child=body)
++        builder.add_shape_box(body, hx=0.15, hy=0.015, hz=0.0025)
++        base = wp.quat_from_axis_angle(wp.vec3(0.0, 1.0, 0.0), base_angle)
++        displaced = wp.mul(base, wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), 0.3))
++        q = np.asarray(builder.joint_q, dtype=float)
++        q[:3] = [0.0, 0.0, 0.6]
++        q[3:7] = np.asarray(displaced)
++        builder.joint_q = q.tolist()
++        model = builder.finalize()
++        solver = newton.solvers.SolverMuJoCo(
++            model, solver="newton", integrator="implicitfast",
++            njmax=50, nconmax=50, iterations=20, ls_iterations=10,
++            use_mujoco_contacts=False,
++        )
++        s0, s1 = model.state(), model.state()
++        newton.eval_fk(model, model.joint_q, model.joint_qd, s0)
++        control, contacts = model.control(), model.contacts()
++        command = _command(
++            world_count=1, num_joint_q=model.joint_coord_count,
++            num_joint_dof=model.joint_dof_count, bodies_per_world=model.body_count,
++            body_ids=(0,), target_pos=((0.0, 0.0, 0.6),),
++            target_quat=(tuple(base),),
++        )
++        scale = wp.ones(1, dtype=wp.float32)
++        errors = []
++        for _ in range(200):
++            s0.clear_forces()
++            apply_object_control(model, s0, control, command, scale)
++            solver.step(s0, s1, control, contacts, 0.01)
++            s0, s1 = s1, s0
++            pose = s0.body_q.numpy()[0]
++            assert np.isfinite(pose).all()
++            errors.append(2 * np.arccos(np.clip(abs(np.dot(pose[3:], np.asarray(base))), 0, 1)))
++    assert max(errors) < 0.35
++    assert errors[-1] < 0.01
+diff --git a/robotic_grounding/flash_chord/tests/training/test_checkpoint_metadata.py b/robotic_grounding/flash_chord/tests/training/test_checkpoint_metadata.py
+index 6f5bf883..0aa5dff3 100644
+--- a/robotic_grounding/flash_chord/tests/training/test_checkpoint_metadata.py
++++ b/robotic_grounding/flash_chord/tests/training/test_checkpoint_metadata.py
+@@ -138,6 +138,26 @@ def test_checkpoint_metadata_round_trips_and_requires_all_requested_fields():
+             reader({})
+ 
+ 
++def test_checkpoint_metadata_preserves_effective_ordered_joint_controls():
++    from flash_chord.embodiments.base import JointControlSpec, resolve_joint_controls
++    from flash_chord.training.checkpoint_metadata import build_checkpoint_metadata, checkpoint_config
++
++    overrides = {
++        r"wrist_[xyz]$": {"kp": 25.0, "kd": 6.0},
++        r"right_wrist_[xyz]$": {"kp": 250.0, "kd": 20.0},
++        r"left_wrist_[xyz]$": {"kp": 100.0, "kd": 12.0},
++    }
++    config = {"embodiment": {"config": {"joint_overrides": overrides}}}
++    restored = checkpoint_config(build_checkpoint_metadata(config, {}))
++    controls = resolve_joint_controls(
++        ["left_wrist_x", "right_wrist_x"],
++        JointControlSpec(),
++        restored["embodiment"]["config"]["joint_overrides"],
++    )
++
++    assert [(control.kp, control.kd) for control in controls] == [(100.0, 12.0), (250.0, 20.0)]
++
++
+ def test_checkpoint_metadata_rejects_malformed_json_and_nonmapping_values():
+     from flash_chord.training.checkpoint_metadata import CONFIG_METADATA_KEY, checkpoint_config
+ 

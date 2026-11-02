@@ -1,0 +1,23 @@
+# Track only the implementation, kit copies and submission documentation.
+# Local datasets, run artifacts, model weights and archives stay on disk.
+/*
+!/*.py
+!/*.sh
+!/*.c
+!/.gitignore
+!/README.md
+!/submission_docs/
+!/submission_kit_20261102/
+!/v2d_submission_kit/
+
+**/__pycache__/
+*.py[cod]
+*.so
+.env
+.env.*
+**/kaggle.json
+**/access_token
+**/.kaggle/
+**/.ssh/
+*.pem
+*.key

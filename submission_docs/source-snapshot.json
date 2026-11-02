@@ -1,0 +1,17 @@
+{
+  "upstream_repository": "https://github.com/nvidia-isaac/video_to_data",
+  "local_checkout_head": "193382a184308f6800331f3db829f76dc4294cfe",
+  "kit_evaluator_runtime_commit": "8c778f905cb35f76f8e6cd6e2ea486da4fb9e0ef",
+  "upstream_working_patch_sha256": "507ecde7c9d5a7c20af78a99a17d0a214ed888c62b219292cec0399914213814",
+  "snapshot_files": {
+    "source_cad_alignment.py": "5c81d49f3c66eaf890ff6a366ecfb9e702de154cfe3a23996a8bf26c156a9dcd",
+    "source_cad_queue.py": "fe5fe570f50486a047b116dd2f4a77c503bcbbcc7792b75607ee4e67c50ee890",
+    "evaluation_experiment_queue.py": "6395887c3d9f8477c8133418ee82fc750bbfc39536e15b2216b817801d701b41",
+    "official_policy_suite.py": "e3c2178bf92fec283a8b7ad7b046c51bef906018f4baf5d54b706a7f93d28f9c",
+    "batch_submission_stage.py": "0a147005d0f2d06cc290af35caadedf98f0c4a21e240a90c93b96e3184c6e210",
+    "package_existing_evaluation20.py": "efd00845f40d2b941462a549004f5df33ed6bb0629757d6c656522e32d99eb2b"
+  },
+  "strict_completion_count": 0,
+  "official_submission_ready": false,
+  "note": "New source snapshot only. Existing recordings predate this commit. Re-evaluate with the required evaluator before using this commit as official submission provenance."
+}

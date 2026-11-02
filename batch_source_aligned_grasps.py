@@ -1,0 +1,26 @@
+"""Keep source-aligned grasp fitting only when it improves the full-frame hand comparison."""
+import fcntl,json,shutil,subprocess,sys,time
+from batch_worker import BASE,PY,context
+from batch_native import containers,docker
+for ep in map(int,sys.argv[1:]):
+ r,c=context(ep)
+ with (r/'research/collision-reference.lock').open('a') as lock:
+  fcntl.flock(lock,fcntl.LOCK_EX);assert not (r/'coherent-input-checksums.json').exists();reference=c.get('training_reference','track3_collision_variant');candidate='track3_source_aligned_grasp_candidate';source=r/f'human_motion_data/{reference}';destination=r/f'human_motion_data/{candidate}';shutil.copytree(source,destination,dirs_exist_ok=True);marker=r/'research/source-aligned-grasp-selection.json'
+  if marker.exists():continue
+  side='left' if ep==28 else 'right'
+  if ep==28:jobs=[{'side':'left','object':1,'start':13,'end':48,'template_source_frame':30},{'side':'left','object':1,'start':49,'end':70,'template_source_frame':56}]
+  else:
+   templates=json.loads((r/'research/coherent-grasp-variant.json').read_text());g=next(g for g in c['grasps'] if g['side']=='right');template=next(x for x in templates if x['side']=='right');jobs=[{**g,'template_source_frame':template['template_source_frame']}]
+  backup=r/f'research/source-aligned-grasp-{time.time_ns()}';backup.mkdir();path=next((source/'processed').rglob('motion.parquet'));shutil.copy2(path,backup/'motion.parquet');audit=r/f'evaluation/{reference}-collision-audit.json';shutil.copy2(audit,backup/'audit.json');before_audit=json.loads(audit.read_text());newton,retarget=containers(r,ep)
+  for name in ['optimize_native_grasps','apply_collision_transitions','native_reference_audit']:shutil.copy2(BASE/f'{name}.py',r/f'scripts/{name}.py')
+  def project(ref,label):
+   out=r/f'evaluation/{label}-hand-projection.json';subprocess.run([PY,str(BASE/'assess_retarget_hand_projection.py'),'--run',str(r),'--reference',ref,'--output',str(out)],check=True);return json.loads(out.read_text())['aggregate']
+  def native(script,label,**env):docker(['exec',newton,'env',*[f'{k}={v}' for k,v in env.items()],'python','-u',f'/episode/scripts/{script}.py'],r/f'logs/{label}.log')
+  def apply(label,blend=False):docker(['exec',retarget,'env',f'V2D_TRANSITION_REFERENCE={candidate}',f'V2D_CONTACT_FIT_OUTPUT={fit}','V2D_CONTACT_APPLY_OUTPUT=research/source-aligned-grasp-applied.json',*(['V2D_BLEND_ADJACENT_FITS=1'] if blend else []),'/isaac-sim/python.sh','-u','/episode/scripts/apply_collision_transitions.py'],r/f'logs/{label}.log')
+  before=project(reference,'before-source-aligned-grasp');fit='research/source-aligned-grasp-fit.json';native('optimize_native_grasps','source-aligned-grasp-fit',V2D_GRASP_REFERENCE=candidate,V2D_GRASP_JOBS=json.dumps(jobs),V2D_SOURCE_HAND_SIGMA='12',V2D_CONTACT_FIT_OUTPUT=fit);apply('source-aligned-grasp-apply',True);native('native_reference_audit','source-aligned-grasp-audit',V2D_AUDIT_REFERENCE=candidate);candidate_audit=r/f'evaluation/{candidate}-collision-audit.json';a=json.loads(candidate_audit.read_text());selection={s:[i for g in jobs if g['side']==s for i in range(g['start'],g['end']+1)] for s in ['left','right']}
+  if any(any(hit['penetration_mm']>3 and any(n.startswith(side+'_sharpa_wave_') for n in hit['bodies']) and frame['source_frame'] in selection[side] for hit in frame['penetrating_cross_body_contacts']) for frame in a['frames']):
+   fit='research/source-aligned-grasp-clearance-fit.json';native('optimize_native_grasps','source-aligned-grasp-clearance',V2D_GRASP_REFERENCE=candidate,V2D_OPTIMIZE_CONTACT_FRAMES='1',V2D_CONTACT_FRAME_SELECTION=json.dumps(selection),V2D_SOURCE_HAND_SIGMA='12',V2D_CONTACT_FIT_OUTPUT=fit);apply('source-aligned-grasp-clearance-apply');native('native_reference_audit','source-aligned-grasp-audit',V2D_AUDIT_REFERENCE=candidate);a=json.loads(candidate_audit.read_text())
+  after=project(candidate,'after-source-aligned-grasp');affected=['left','right'].index(side);image_ok=after[affected]['all_mean_wrist_error_px']<=before[affected]['all_mean_wrist_error_px']*.8 and all(n['all_mean_landmark_error_px']<=o['all_mean_landmark_error_px']*1.1+5 for o,n in zip(before,after));physics_ok=a['maximum_cross_body_penetration_mm']<=max(5.,before_audit['maximum_cross_body_penetration_mm']+1) and a['source_frames_over_10mm']<=before_audit['source_frames_over_10mm'];accepted=image_ok and physics_ok
+  if accepted:
+   tmp=path.with_name(path.name+'.source-fit.tmp');shutil.copy2(next((destination/'processed').rglob('motion.parquet')),tmp);tmp.replace(path);a['reference']=reference;tmp=audit.with_suffix('.source-fit.tmp');tmp.write_text(json.dumps(a,indent=2));tmp.replace(audit)
+  decision={'accepted':accepted,'method':__doc__,'reference':reference,'candidate_reference':candidate,'affected_side':side,'source_projection_before':before,'source_projection_after':after,'image_guard_passed':image_ok,'collision_guard_passed':physics_ok,'maximum_cross_body_penetration_mm':a['maximum_cross_body_penetration_mm'],'backup':str(backup.relative_to(r)),'source_frame_count':c['frames'],'object_poses_and_camera_unchanged':True};marker.write_text(json.dumps(decision,indent=2));print(ep,'source-aligned grasp accepted',accepted,decision,flush=True)

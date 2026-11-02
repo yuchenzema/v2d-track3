@@ -1,0 +1,59 @@
+{
+  "schema": "v2d_container_v1",
+  "team": "YOUR KAGGLE TEAM NAME",
+  "code": {
+    "path": "code",
+    "commit_url": "https://github.com/YOUR_ORG/YOUR_REPO/commit/0123456789abcdef0123456789abcdef01234567"
+  },
+  "kit": "kit",
+  "submissions": [
+    {
+      "label": "tier1",
+      "track": "track_2_tier1",
+      "file": "submitted/track2_tier1.csv",
+      "kaggle_submission_ids": {
+        "add_auc": 0,
+        "spider_sr": 0,
+        "maniptrans_sr": 0,
+        "mppe_cm": 0
+      },
+      "evaluator": {
+        "script": "kit/flash_chord/scripts/evaluate_policy.py",
+        "evaluation_package": "/opt/flash_chord/src/flash_chord/evaluation"
+      },
+      "checkpoints": {
+        "0": "weights/tier1/episode_000000.safetensors",
+        "1": "weights/tier1/episode_000001.safetensors",
+        "2": "weights/tier1/episode_000002.safetensors",
+        "3": "weights/tier1/episode_000003.safetensors",
+        "4": "weights/tier1/episode_000004.safetensors",
+        "5": "weights/tier1/episode_000005.safetensors",
+        "6": "weights/tier1/episode_000006.safetensors",
+        "7": "weights/tier1/episode_000007.safetensors",
+        "8": "weights/tier1/episode_000008.safetensors",
+        "9": "weights/tier1/episode_000009.safetensors",
+        "10": "weights/tier1/episode_000010.safetensors",
+        "11": "weights/tier1/episode_000011.safetensors",
+        "12": "weights/tier1/episode_000012.safetensors",
+        "13": "weights/tier1/episode_000013.safetensors",
+        "14": "weights/tier1/episode_000014.safetensors",
+        "15": "weights/tier1/episode_000015.safetensors",
+        "16": "weights/tier1/episode_000016.safetensors",
+        "17": "weights/tier1/episode_000017.safetensors",
+        "18": "weights/tier1/episode_000018.safetensors",
+        "19": "weights/tier1/episode_000019.safetensors",
+        "20": "weights/tier1/episode_000020.safetensors",
+        "21": "weights/tier1/episode_000021.safetensors",
+        "22": "weights/tier1/episode_000022.safetensors",
+        "23": "weights/tier1/episode_000023.safetensors",
+        "24": "weights/tier1/episode_000024.safetensors",
+        "25": "weights/tier1/episode_000025.safetensors",
+        "26": "weights/tier1/episode_000026.safetensors",
+        "27": "weights/tier1/episode_000027.safetensors",
+        "28": "weights/tier1/episode_000028.safetensors",
+        "29": "weights/tier1/episode_000029.safetensors"
+      },
+      "outputs": "outputs/tier1/rollouts"
+    }
+  ]
+}

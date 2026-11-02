@@ -1,0 +1,24 @@
+{
+  "schema": "v2d_container_v1",
+  "team": "YOUR KAGGLE TEAM NAME",
+  "code": {
+    "path": "code",
+    "commit_url": "https://github.com/YOUR_ORG/YOUR_REPO/commit/0123456789abcdef0123456789abcdef01234567"
+  },
+  "kit": "kit",
+  "submissions": [
+    {
+      "label": "track1",
+      "track": "track_1",
+      "file": "submitted/track1.parquet",
+      "kaggle_submission_ids": {
+        "cd_h_cm": 0,
+        "cd_o_cm": 0,
+        "acc_h_cm": 0,
+        "acc_o_cm": 0,
+        "interpenetration_cm": 0
+      },
+      "outputs": "outputs/track1/reconstructions"
+    }
+  ]
+}
