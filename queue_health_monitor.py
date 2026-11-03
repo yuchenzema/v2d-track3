@@ -140,6 +140,11 @@ def apply_pending_update(paused, done):
         request=read(path,{})
         if not request.get('pending') or read(BATCH/'user-pause.json',{}).get('status')=='paused_by_user':return False
         if owner_alive(read(BATCH/'episode-slot-owner.json',{})) or native_learners():return False
+        if request.get('code_commit'):
+            # Do not start an episode against an in-progress implementation.
+            # Tests/commit finish before the existing safe-boundary deployment.
+            changed=subprocess.run(['git','diff','--quiet','HEAD'],cwd=BASE,capture_output=True)
+            if changed.returncode:return False
         submission=read(OUT/'own-submission-status.json',{})
         phase=read(OUT/'status.json',{}).get('phase','').lower()
         if (submission.get('status') in {'packing_and_preflight','uploading'}

@@ -13,15 +13,20 @@ for s,side in enumerate(['left','right']):
   segments=['CMC_VL','MCP_VL','DP'] if finger=='thumb' else ['MCP_VL','MP','DP'];indices.extend([names.index(f'{side}_{finger}_{x}') for x in segments]+[names.index(f'{side}_{finger}_tip_site')])
  for g in [g for g in cfg['grasps'] if g['side']==side]:
   start,end,b=g['start'],g['end'],g['object'];lo=max(0,start-5);hi=min(T-1,end+5)
-  local=np.einsum('nij,nkj->nki',O[start:end+1,b,:3,:3].transpose(0,2,1),H[start:end+1,s]-O[start:end+1,b,None,:3,3]);target=np.median(local,axis=0);scores=[]
-  for t in range(start+min(10,(end-start)//4),end-min(10,(end-start)//4)+1):
+  source_candidates=list(range(start+min(10,(end-start)//4),end-min(10,(end-start)//4)+1));role='interval_median';target_indices=np.arange(start,end+1)
+  if cfg.get('quality_training'):
+   from source_grasp_phase import template_frames
+   source_candidates,role=template_frames(cfg['grasps'],g);target_indices=np.asarray(source_candidates)
+  local=np.einsum('nij,nkj->nki',O[target_indices,b,:3,:3].transpose(0,2,1),H[target_indices,s]-O[target_indices,b,None,:3,3]);target=np.median(local,axis=0);scores=[]
+  for t in source_candidates:
    P=(frames[t,indices,:3]-O[t,b,:3,3])@O[t,b,:3,:3];scores.append((float(np.mean(np.linalg.norm(P-target,axis=1))),t))
   score,t=min(scores);base=np.eye(4);base[:3,:3]=Rotation.from_quat(Q[t],scalar_first=True).as_matrix();base[:3,3]=w[t];localbase=np.linalg.inv(O[t,b])@base;finger=f[t].copy()
   for i in range(lo,hi+1):
    blend=float(np.clip(min((i-lo)/max(1,start-lo),(hi-i)/max(1,hi-end)),0,1))
    if start<=i<=end:blend=1.
    new=O[i,b]@localbase;w[i]=(1-blend)*w[i]+blend*new[:3,3];Q[i]=Slerp([0,1],Rotation.from_matrix([Rotation.from_quat(Q[i],scalar_first=True).as_matrix(),new[:3,:3]]))([blend]).as_quat(scalar_first=True)[0];f[i]=(1-blend)*f[i]+blend*finger
-  report.append({'side':side,'object':cfg['objects'][b],'template_source_frame':t,'mean_anatomical_landmark_error_m':score,'held_interval':[start,end],'blend_interval':[lo,hi]})
+  report.append({'side':side,'object':cfg['objects'][b],'template_source_frame':t,'mean_anatomical_landmark_error_m':score,'held_interval':[start,end],'blend_interval':[lo,hi],
+   'support_phase':role,'template_candidate_source_frames':source_candidates})
  # Recompute all FK and all contact labels from the final grasp targets.
  for i in range(T):
   kin.configuration.update(np.r_[w[i],Q[i,[1,2,3,0]],f[i]])

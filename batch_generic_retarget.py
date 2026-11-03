@@ -36,6 +36,7 @@ for gi,g in enumerate(grasps):
   s=s.replace('video-observed sustained grasps; left thumb above pot handle and fingers below; right thumb above and fingers below the reconstructed spoon shaft; local contact anchors inferred from estimated human fingertips','Video-observed separate grasps and handovers; local contacts inferred from the human fingertips in this interval and opposing surface normals')
   (r/'scripts/retarget_hands.py').write_text(s)
   s=(BASE/'batch_coherent.py').read_text();(r/'scripts/coherent_grasp_variant.py').write_text(s)
+  (r/'scripts/source_grasp_phase.py').write_text((BASE/'source_grasp_phase.py').read_text())
   # Shared native code contains no assumption about a two-object scene.
   for name in ['view_policy_single_attempt.py','record_policy_states.py','recorded_trajectory_renderer.py','render_recorded_oblique.py','render_source_camera.py','assess_single_attempt.py','wrist_velocity_controller.py','record_velocity_controller.py','evaluate_velocity_controller.py']:
    s=(OLD/name).read_text().replace('episode_000005',c['sequence']).replace("name=['white_pot','wooden_spoon'][b]","name=binding.name")
