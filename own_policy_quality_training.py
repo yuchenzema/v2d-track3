@@ -157,6 +157,9 @@ def run(out,focus):
             progress['cohort_submitted']=True;save(out/'quality-training-status.json',progress)
             from kaggle_quality_comparison import compare
             comparison=compare(out,policy['baseline_receipt'])
+            if comparison.get('all_six_improved') and len(focus)==20:
+                progress['all_six_metrics_improved']=True;save(out/'quality-training-status.json',progress)
+                state['submission_cohort_completed']=True
             emit(None,'Kaggle results checked: '+('all six metrics improved' if comparison.get('all_six_improved') else 'remaining metric improvements require another measured round'))
             return
         emit(None,'Retry unresolved quality execution stages; trained checkpoints and valid baseline retained');time.sleep(30)

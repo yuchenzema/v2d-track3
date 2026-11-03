@@ -218,6 +218,7 @@ def select_result(root,result):
         official_recorded_state_sha256=result['states_sha256'],official_trajectory_sha256=result['trajectory_sha256'],source_quality_is_diagnostic=True)
     save(root/'final-controller-selection.json',dict(selected=selected))
     save(root/'research/fast-submission-result.json',result)
+    save(root/'research/improvement-status.json',dict(result,status='completed_for_submission'))
 
 
 def run(root,job,make_container,status):
@@ -260,6 +261,5 @@ def run(root,job,make_container,status):
     save(root/'research/improvement-status.json',dict(status='evaluating',episode=ep,updated_utc=utc()))
     result=evaluate_checkpoint(root,checkpoint,native)
     select_result(root,result)
-    save(root/'research/improvement-status.json',dict(result,status='completed_for_submission'))
     status(ep,'Fast submission: trained policy and official trajectory ready; strict completion not claimed')
     return result
