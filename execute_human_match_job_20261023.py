@@ -148,6 +148,14 @@ def container(r,episode,kind):
         return container_name
     template=json.loads(w._docker(['inspect',f'v2d-batch-episode19-{kind}']).stdout)[0]
     cmd=['run','-d','--gpus','all','--runtime','nvidia','--ipc','host','--name',container_name]
+    if kind=='newton' and job.get('fast_submission'):
+        # CUDA compilation caches contain no policies, optimizer state or data
+        # priors. Reuse kernels by their native content hash across serial jobs.
+        cache=BASE/'.cache/fast-native'
+        for backend in ['warp','jax']:
+            (cache/backend).mkdir(parents=True,exist_ok=True)
+            cmd+=['-v',str(cache/backend)+':/root/.cache/'+backend]
+        cmd+=['-e','JAX_COMPILATION_CACHE_DIR=/root/.cache/jax']
     for mount in template['Mounts']:cmd+=['-v',(str(r) if mount['Destination']=='/episode' else mount['Source'])+':'+mount['Destination']+('' if mount['RW'] else ':ro')]
     for device in sorted([*Path('/dev').glob('nvidia*'),*Path('/dev/nvidia-caps').glob('*')]):
         if stat.S_ISCHR(device.stat().st_mode):cmd+=['--device',str(device)]
