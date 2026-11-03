@@ -24,7 +24,7 @@ def execution_inputs():
         'legacy_source_frame_playback.py','fresh_improvement_training.py','actor_transfer_training.py','grasp_training_admission.py',
         'batch_export.py','batch_generic_retarget.py','batch_coherent.py','evaluate_reference_controller.py','official_policy_suite.py',
         'export_reference_diagnostics.py','thorough_episode_recheck.py','audit_rebuilt_rollout_20261023.py',
-        'own_source_quality.py','quality_contact_reference.py','source_policy_validation.py','own_policy_quality_training.py','quality_followups.py']}
+        'own_source_quality.py','quality_contact_reference.py','source_policy_validation.py','own_policy_quality_training.py','quality_followups.py','quality_policy_overlay.py']}
 
 
 def baseline_source(source):

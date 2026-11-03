@@ -81,6 +81,32 @@ class NativePinchContacts:
         # Keep 0.5 mm clearance, identical to the strict reference fitter.
         return np.array([(row['distance_m'] - .0005) / .0005 for row in self.query()])
 
+    def support_residual(self):
+        """Fitting objective only: bounded friction-cone wrench imbalance.
+
+        No force is applied to the model. The original exact feasibility and
+        penetration acceptance still decide whether a proposed fit is usable.
+        """
+        from scipy.optimize import lsq_linear
+        gravity=np.asarray(self.model.opt.gravity,dtype=float)
+        mass=float(self.model.body_mass[self.body]);center=np.asarray(self.data.xipos[self.body])
+        target=np.r_[-mass*gravity,np.zeros(3)];columns=[]
+        for row in self.query():
+            normal=np.asarray(row['normal_on_object']);length=np.linalg.norm(normal)
+            if not row['valid_witness'] or length<.5:continue
+            normal=normal/length;tangent=np.eye(3)[np.argmin(np.abs(normal))]
+            tangent-=normal*np.dot(tangent,normal);tangent/=np.linalg.norm(tangent)
+            second=np.cross(normal,tangent);mu=row['friction'];point=np.asarray(row['position'])
+            for force in [normal+mu*tangent,normal-mu*tangent,normal+mu*second,normal-mu*second]:
+                columns.append(np.r_[force,np.cross(point-center,force)/.1])
+        scale=max(.1,mass*np.linalg.norm(gravity))
+        if not columns:return -4*target/scale
+        matrix=np.asarray(columns).T
+        # Four nonnegative edge loads capped at 25/4 N preserve the existing
+        # 25 N per-contact bound. Final acceptance uses the exact grouped LP.
+        solution=lsq_linear(matrix,target,bounds=(0.,25./4),lsq_solver='exact',tol=1e-6,max_iter=40)
+        return 4*(matrix@solution.x-target)/scale
+
     def summary(self):
         rows = self.query()
         near = [row for row in rows if row['valid_witness'] and -1e-6 <= row['distance_m'] <= .001

@@ -727,6 +727,15 @@ def collect():
                         own_rows[ep].update(policy_training_steps=recorded_steps(row['run']) or 0,
                             official_policy_rollout=('quality candidate validated; '+('selected' if row.get('selected') else 'original retained'))
                                 if row.get('status')=='completed' else row.get('status','pending'))
+                        candidate_root=Path(row['run']);result=read_json(candidate_root/'research/fast-submission-result.json',{})
+                        sha=result.get('checkpoint_sha256','');folder=candidate_root/f'evaluation/quality-visualization/{sha[:16]}'
+                        overlay=read_json(folder/'manifest.json',{})
+                        if (sha and overlay.get('identity',{}).get('checkpoint_sha256')==sha
+                                and overlay.get('identity',{}).get('trajectory_sha256')==result.get('trajectory_sha256')
+                                and (folder/'comparison.mp4').is_file()):
+                            own_rows[ep].update(policy_overlay=artifact(folder/'comparison.mp4'),
+                                policy_overlay_report=artifact(folder/'manifest.json'),
+                                selected_model_training_steps=overlay['actual_model_training_steps'])
                 if current_run and str(human_match_loop.get('current_episode')) in own_rows:
                     own_rows[str(human_match_loop['current_episode'])]['policy_training_steps']=recorded_steps(current_run) or 0
         from kaggle_progress import current_scores,latest_comparison

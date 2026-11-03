@@ -49,6 +49,21 @@ def run(out,focus):
     # candidates forward too, then revisit the early imperfect rollouts.
     order=[35,30,16,28,36,33,20,19,1,25,15,6,3,8,32,14,5,10,37,38]
     order=[ep for ep in order if ep in focus]
+    def render_review(ep,root):
+        try:
+            from quality_policy_overlay import render
+            emit(ep,'Render original-source CAD and genuine policy-object overlays',root)
+            with episode_slot(root,ep):video=render(root)
+            progress.setdefault('overlays',{})[str(ep)]=video['video']
+            progress.setdefault('overlay_errors',{}).pop(str(ep),None)
+        except Exception as error:progress.setdefault('overlay_errors',{})[str(ep)]=str(error)
+        save(out/'quality-training-status.json',progress)
+    if not progress.get('source_overlay_backfill_complete'):
+        for ep,row in progress['episodes'].items():
+            if row.get('status')!='completed' or not row.get('run'):continue
+            if read(out/'controller-reload-request.json').get('pending') or read(BATCH/'user-pause.json').get('status')=='paused_by_user':return
+            render_review(int(ep),Path(row['run']))
+        progress['source_overlay_backfill_complete']=True;save(out/'quality-training-status.json',progress)
     while True:
         for ep in order:
             if read(BATCH/'user-pause.json').get('status')=='paused_by_user':return
@@ -153,6 +168,7 @@ def run(out,focus):
                 if selected:selection['episodes'][str(ep)]=dict(run=str(root))
                 save(out/'quality-selection.json',dict(selection,updated_utc=utc(),quality_stage='geometry_contacts_training',not_kaggle_improvement_claim=True))
                 progress['episodes'][str(ep)]=dict(status='completed',review_revision=2,run=str(root),request=str(request),selected=selected,baseline_source_validation=base_metrics,candidate_source_validation=chosen['diagnostic'])
+                render_review(ep,root)
                 emit(ep,'Full policy and source-image validation completed; selecting whole episodes only',root)
                 reviewed=sum(row.get('status')=='completed' and row.get('review_revision')==2 for row in progress['episodes'].values())
                 interval=max(1,int(policy.get('upload_every_reviewed_episodes',4)))

@@ -14,6 +14,9 @@ def optimizer_script():
     allowance='contact_allowance_m=-.0005 if strict_contacts else .0005'
     assert allowance in text
     text=text.replace(allowance,'contact_allowance_m=-.0005')
+    support='return np.r_[residual(x),pinch.residual()]'
+    assert support in text
+    text=text.replace(support,'return np.r_[residual(x),pinch.residual(),pinch.support_residual()]')
     text=text.replace('results=[];O=',"results=[]\n import re\n for values in names.values():\n  for label,index in list(values.items()):\n   if label:values[re.sub(r'[^a-zA-Z0-9_]', '_', label)]=index\n O=")
     text=text.replace('f"track3_{cfg[\'objects\'][b]}/object"','f"{cfg[\'objects\'][b]}/object"')
     original="  target=tip_positions();active=np.array(c[f'mano_{side}_object_contact_part_ids'])[t]>0"
@@ -58,4 +61,4 @@ def fit(root,native,retarget):
     save(marker,dict(updated_utc=utc(),before_sha256=source_sha,after_sha256=digest(reference),
         object_motion_and_source_clock_preserved=True,dynamic_policy_grasp_success_not_claimed=True,
         optimizer_script_sha256=digest(root/'scripts/quality_optimize_grasps.py'),
-        optimizer_revision='supporting_contact_clearance_v2'))
+        optimizer_revision='supporting_contact_wrench_v3'))
