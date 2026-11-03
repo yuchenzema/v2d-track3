@@ -37,7 +37,9 @@ for s,side in enumerate(['left','right']):
    if not found:continue
    dist,b,idx=min(found)
    if dist>.025:continue
-   M=O[i,b];cp[i,j]=meshes[b].vertices[idx]@M[:3,:3].T+M[:3,3];n=meshes[b].vertex_normals[idx]@M[:3,:3].T;cn[i,j]=n/(np.linalg.norm(n)+1e-12);pid[i,j]=b+1
+   M=O[i,b];n=meshes[b].vertex_normals[idx]@M[:3,:3].T;length=np.linalg.norm(n)
+   if not np.isfinite(length) or length<1e-8:continue
+   cp[i,j]=meshes[b].vertices[idx]@M[:3,:3].T+M[:3,3];cn[i,j]=n/length;pid[i,j]=b+1
  for key,value in [('wrist_position',w),('wrist_wxyz',Q),('finger_joints',f),('frames',frames)]:c[f'robot_{side}_{key}']=value.tolist()
  for key,value in [('positions',cp),('normals',cn),('part_ids',pid)]:c[f'mano_{side}_object_contact_{key}']=value.tolist()
 out=R/f'human_motion_data/track3_coherent_variant/processed/sequence_id={seq}/robot_name=sharpa_wave';out.mkdir(parents=True,exist_ok=True);pq.write_table(pa.Table.from_pylist([c]),out/'motion.parquet',compression='zstd');stage=out.parent.parent.parent/'reconstructed_stage';stage.mkdir(exist_ok=True);shutil.copy(p.parent.parent.parent.parent/f'reconstructed_stage/{seq}_support.usda',stage);(R/'research/coherent-grasp-variant.json').write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2))

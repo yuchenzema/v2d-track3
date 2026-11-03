@@ -126,6 +126,43 @@ def reset_untrained_setup(root,force=False):
     return True
 
 
+def sanitize_reference_contacts(root,cfg):
+    """Omit contacts whose reconstructed surface normal is undefined.
+
+    This edits supervision before learning only. Object/robot poses, timing,
+    geometry and achieved recordings are never changed by this repair.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    root=Path(root)
+    path=root/f"human_motion_data/{cfg['training_reference']}/processed/sequence_id={cfg['sequence']}/robot_name=sharpa_wave/motion.parquet"
+    table=pq.ParquetFile(path).read();row=table.to_pylist()[0];changes={}
+    for side in ['left','right']:
+        prefix=f'mano_{side}_object_contact_';normals=np.asarray(row[prefix+'normals']);ids=np.asarray(row[prefix+'part_ids']);positions=np.asarray(row[prefix+'positions'])
+        length=np.linalg.norm(normals,axis=-1);active=ids>0
+        invalid=active&(~np.isfinite(normals).all(-1)|(length<1e-8))
+        unnormalized=active&~invalid&(np.abs(length-1.)>1e-5)
+        if not (invalid.any() or unnormalized.any()):continue
+        normals[invalid]=0.;positions[invalid]=0.;ids[invalid]=0
+        normals[unnormalized]/=length[unnormalized,None]
+        row[prefix+'normals']=normals.tolist();row[prefix+'positions']=positions.tolist();row[prefix+'part_ids']=ids.tolist()
+        changes[side]=dict(undefined_contacts_omitted=int(invalid.sum()),nonunit_normals_normalized=int(unnormalized.sum()))
+    if not changes:return False
+    folder=root/'flash_chord_coherent_actor_transfer'
+    assert not list(folder.glob('*.safetensors')) and not (folder/'TRAINING_COMPLETED').exists(),'Never edit trained policy references'
+    metrics=folder/'metrics.jsonl'
+    if metrics.exists():assert not any(json.loads(line).get('environment_steps',0)>0 for line in metrics.read_text().splitlines()),'Never edit a reference after learning starts'
+    if (root/'coherent-input-checksums.json').exists():assert reset_untrained_setup(root,force=True)
+    old_sha=digest(path);archive=root/'research/contact-normal-repair'/old_sha[:16];archive.mkdir(parents=True,exist_ok=True);shutil.copy2(path,archive/'motion.parquet')
+    updated=pa.Table.from_pylist([row],schema=table.schema)
+    untouched=[name for name in table.column_names if not name.startswith(('mano_left_object_contact_','mano_right_object_contact_'))]
+    assert table.select(untouched).equals(updated.select(untouched)),'Contact repair changed motion/reference data'
+    pq.write_table(updated,path,compression='zstd')
+    save(archive/'repair.json',dict(updated_utc=utc(),before_sha256=old_sha,after_sha256=digest(path),changes=changes,
+        actual_training_steps=0,all_motion_geometry_and_timing_fields_unchanged=True))
+    return True
+
+
 def run(root,job,make_container,status):
     from batch_generic_retarget import install
     from batch_native import docker,_docker,launch_training
@@ -145,6 +182,7 @@ def run(root,job,make_container,status):
         if not output.is_file():
             status(ep,'Fast submission: '+script)
             docker(['exec',retarget,'/isaac-sim/python.sh','-u',f'/episode/scripts/{script}.py'],root/f'logs/fast-{script}.log')
+    sanitize_reference_contacts(root,cfg)
     script=root/'scripts/train_coherent_actor_transfer.py'
     if not (root/'coherent-input-checksums.json').exists():
         script.write_text(training_script(cfg,20261102+ep+997*job['generation']))
