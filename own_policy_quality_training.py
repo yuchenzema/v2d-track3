@@ -166,6 +166,8 @@ def run(out,focus):
                     emit(ep,'Upload the complete 20-episode cohort at the quality milestone; remote scoring runs independently',root)
                     try:
                         submit(out,focus)
+                        if (read(out/'controller-reload-request.json').get('pending')
+                                or read(BATCH/'user-pause.json').get('status')=='paused_by_user'):return
                         progress['last_uploaded_reviewed_count']=reviewed;progress.pop('submission_error',None)
                         progress['intermediate_upload_count']=upload_count+1
                         if decisive:progress.setdefault('decisive_uploaded_episodes',[]).append(ep)
