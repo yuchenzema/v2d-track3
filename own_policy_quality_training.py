@@ -82,7 +82,12 @@ def run(out,focus):
                 progress['episodes'][str(ep)]=dict(status='running',run=str(root),request=str(request));emit(ep,'New physical contact fitting and own-geometry policy training',root)
                 candidates=[]
                 def analyze(result):
-                    return dict(score(root,result['trajectory'],parent),rollout_motion=diagnose(result['trajectory']))
+                    diagnostic=dict(score(root,result['trajectory'],parent),rollout_motion=diagnose(result['trajectory']))
+                    save(root/f"research/quality-checkpoint-validation/{result['checkpoint_sha256'][:16]}.json",
+                        dict(diagnostic,checkpoint_sha256=result['checkpoint_sha256'],actual_training_steps=result['actual_training_steps'],
+                            local_reference_success=result.get('local_reference_metrics',{}).get('chord_sr'),
+                            trajectory_sha256=result['trajectory_sha256'],source=str(parent)))
+                    return diagnostic
                 # A controller restart must retain both real evaluated models.
                 # In particular, do not exhaust the bounded continuation and
                 # then retry the same budget assertion forever.

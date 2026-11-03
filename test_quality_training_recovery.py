@@ -15,7 +15,7 @@ class QualityRecoveryTests(unittest.TestCase):
             save(out/'quality-improvement-policy.json',dict(baseline_cohort=str(out/'baseline.json'),baseline_receipt='baseline-receipt'))
             root=base/'runs/episode_000010_newton_human_match_20261023_g001';root.mkdir(parents=True)
             save(root/'episode-config.json',dict(own_training_maximum_steps=2560000))
-            save(root/'research/fast-submission-result.json',dict(actual_training_steps=2560000,checkpoint_sha256='candidate',trajectory='new-rollout'))
+            save(root/'research/fast-submission-result.json',dict(actual_training_steps=2560000,checkpoint_sha256='candidate',trajectory='new-rollout',trajectory_sha256='rollout-hash'))
             child=Mock();child.poll.return_value=0;child.returncode=0
             with patch.object(quality,'BASE',base),patch.object(quality,'BATCH',base),\
                  patch.object(quality,'episode_slot',side_effect=lambda *a:contextlib.nullcontext()),\
@@ -23,7 +23,7 @@ class QualityRecoveryTests(unittest.TestCase):
                  patch('source_policy_validation.score',return_value=dict(source_video_loss=1.)),\
                  patch('own_policy_calibration.diagnose',return_value=dict(dropped_frames=1)),\
                  patch('fast_policy_execution.select_result'),\
-                 patch('own_submission_queue.eligible',return_value=dict(checkpoint_sha256='candidate',trajectory='new-rollout')),\
+                 patch('own_submission_queue.eligible',return_value=dict(checkpoint_sha256='candidate',trajectory='new-rollout',trajectory_sha256='rollout-hash')),\
                  patch('own_submission_queue.run') as upload,\
                  patch('continuous_human_match_20261023.next_generation',return_value=1),\
                  patch('evaluation_experiment_queue.execution_inputs',return_value={}),\
