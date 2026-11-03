@@ -59,9 +59,21 @@ class NativePinchContacts:
             valid = valid_distance_witness(distance, points, .05)
             normal = ((points[3:] - points[:3]) / distance if valid and abs(distance) > 1e-9
                       else np.zeros(3))
+            position=points[3:]
+            if valid and np.linalg.norm(normal)<.5:
+                # At exact touching, coincident GJK witnesses cannot define a
+                # direction. Use the actual native collision manifold's normal
+                # for this exact pair, rather than inventing or omitting it.
+                for contact in self.data.contact:
+                    a,b=map(int,contact.geom)
+                    if (a,b)==(hand,obj) or (a,b)==(obj,hand):
+                        direction=np.asarray(contact.frame).reshape(-1)[:3]
+                        normal=direction if a==hand else -direction
+                        position=np.asarray(contact.pos)
+                        break
             rows.append(dict(finger=finger, hand_geom=hand, object_geom=obj,
                              distance_m=distance if valid else .05, valid_witness=valid,
-                             position=points[3:].tolist(), normal_on_object=normal.tolist(),
+                             position=position.tolist(), normal_on_object=normal.tolist(),
                              friction=float(min(self.model.geom_friction[hand, 0], self.model.geom_friction[obj, 0]))))
         return rows
 
