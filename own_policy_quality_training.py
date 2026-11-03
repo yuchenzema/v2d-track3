@@ -57,10 +57,17 @@ def run(out,focus):
             if entry.get('status')=='completed' and entry.get('review_revision')==2:continue
             try:
                 old=baseline[str(ep)];old_root=Path(old['run']);original_cfg=read(old_root/'episode-config.json');parent=Path(original_cfg['fast_source_run'])
-                source=BASE/f'runs/evaluation_episode_{ep:06d}_quality_20261103_v1'
-                emit(ep,'Repair source poses, fuse independent depth views, and decompose own concave collision surfaces',source)
-                with episode_slot(source,ep):source=prepare_source(parent,ep)
                 request=Path(entry['request']) if entry.get('request') else None
+                if request and request.exists():
+                    # Resume the exact original reconstruction. A later source
+                    # algorithm belongs to a fresh job, never a frozen policy.
+                    source=Path(read(request)['fast_source_run'])
+                    from own_geometry import validate
+                    validate(source)
+                else:
+                    source=BASE/f'runs/evaluation_episode_{ep:06d}_quality_20261103_v2'
+                    emit(ep,'Repair source poses, compare multiview surface candidates, and decompose own concave collision surfaces',source)
+                    with episode_slot(source,ep):source=prepare_source(parent,ep)
                 if request and request.exists():
                     job=read(request)
                     current=execution_inputs()

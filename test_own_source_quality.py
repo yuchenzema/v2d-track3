@@ -18,6 +18,11 @@ class OwnSourceQualityTests(unittest.TestCase):
         self.assertTrue(np.isfinite(result.vertices).all());self.assertLessEqual(len(result.faces),3600);self.assertGreater(len(result.faces),32)
         self.assertLess(np.max(np.abs(result.bounds-mesh.bounds)),.015)
 
+        closed=fuse(mesh,views,intr,prior_weight=.5,trunc_voxels=2.,smooth_sigma=.35,boundary_band=1)
+        self.assertTrue(closed.is_watertight)
+        self.assertTrue(np.isfinite(closed.vertices).all());self.assertGreater(closed.area,0.)
+        self.assertLess(np.max(np.abs(closed.bounds-mesh.bounds)),.02)
+
     def test_iterative_pose_parent_must_itself_be_own_reconstruction(self):
         with tempfile.TemporaryDirectory() as directory:
             base=Path(directory);parent=base/'parent';child=base/'child';raw=base/'rgb-depth-input';raw.write_bytes(b'evaluation RGB and metric depth')

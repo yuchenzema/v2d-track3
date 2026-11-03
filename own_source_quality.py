@@ -50,7 +50,7 @@ def regularize(root,data,cfg):
     return data
 
 
-def fuse(mesh,views,intr):
+def fuse(mesh,views,intr,*,prior_weight=.2,trunc_voxels=3.,smooth_sigma=.55,boundary_band=0):
     """Narrow-band metric TSDF; the original own surface is an explicit weak prior."""
     lo,hi=mesh.bounds;span=float(max(hi-lo));padding=max(.008,min(.03,span*.08));lo=lo-padding;hi=hi+padding
     pitch=float(max(hi-lo)/55);shape=np.maximum(4,np.ceil((hi-lo)/pitch).astype(int)+1)
@@ -58,7 +58,7 @@ def fuse(mesh,views,intr):
     prior,_=trimesh.sample.sample_surface(mesh,12000,seed=3521)
     shell=(cKDTree(prior).query(grid)[0]<pitch*1.2).reshape(tuple(shape));inside=binary_fill_holes(shell)
     signed=(distance_transform_edt(~inside)-distance_transform_edt(inside))*pitch
-    trunc=max(.008,3*pitch);volume=np.clip(signed/trunc,-1,1).reshape(-1)*.2;weights=np.full(len(grid),.2);rgb_points=[];rgb_colors=[]
+    trunc=max(.004,trunc_voxels*pitch);volume=np.clip(signed/trunc,-1,1).reshape(-1)*prior_weight;weights=np.full(len(grid),prior_weight);rgb_points=[];rgb_colors=[]
     for pose,mask,depth,valid,image in views:
         xyz=grid@pose[:3,:3].T+pose[:3,3];uv=np.rint(xyz[:,:2]/np.maximum(xyz[:,2:],.001)*[intr['fx']/2,intr['fy']/2]+[intr['cx']/2,intr['cy']/2]).astype(int)
         bounded=(xyz[:,2]>.05)&(uv[:,0]>=0)&(uv[:,0]<512)&(uv[:,1]>=0)&(uv[:,1]<384);idx=np.flatnonzero(bounded);u,v=uv[idx].T
@@ -71,7 +71,13 @@ def fuse(mesh,views,intr):
             keep=np.linspace(0,len(u)-1,min(2000,len(u)),dtype=int);u,v=u[keep],v[keep];z=depth[v,u]
             points=np.c_[(u-intr['cx']/2)/(intr['fx']/2)*z,(v-intr['cy']/2)/(intr['fy']/2)*z,z]
             rgb_points.append((points-pose[:3,3])@pose[:3,:3]);rgb_colors.append(image[v,u])
-    field=gaussian_filter((volume/weights).reshape(tuple(shape)),.55)
+    field=gaussian_filter((volume/weights).reshape(tuple(shape)),smooth_sigma)
+    if boundary_band:
+        # Explicit bounded-volume prior for unobserved backs. A zero crossing
+        # at the grid edge otherwise creates an open, unstable collision mesh.
+        for axis in range(3):
+            for edge in [slice(0,boundary_band),slice(-boundary_band,None)]:
+                selection=[slice(None)]*3;selection[axis]=edge;field[tuple(selection)]=1.
     if field.min()>=0 or field.max()<=0:raise ValueError('Multiview depth did not define a signed surface')
     vertices,faces,_,_=marching_cubes(field,level=0,spacing=(pitch,)*3);vertices+=lo
     candidate=trimesh.Trimesh(vertices,faces,process=True);candidate=max(candidate.split(only_watertight=False),key=lambda part:part.area)
@@ -79,7 +85,9 @@ def fuse(mesh,views,intr):
     if len(candidate.faces)<32 or not np.isfinite(candidate.vertices).all() or candidate.area<=0:raise ValueError('Invalid fused surface')
     color_points=np.concatenate(rgb_points) if rgb_points else mesh.vertices;color_values=np.concatenate(rgb_colors) if rgb_colors else mesh.visual.vertex_colors[:,:3]
     candidate.visual.vertex_colors=color_values[cKDTree(color_points).query(candidate.vertices)[1]]
-    candidate.fix_normals();return candidate
+    candidate.fix_normals()
+    if boundary_band and not candidate.is_watertight:raise ValueError('Closed-volume fusion produced an open surface')
+    return candidate
 
 
 def collision_assets(root,name,mesh):
@@ -100,7 +108,7 @@ def collision_assets(root,name,mesh):
 
 def prepare(parent,episode):
     parent=Path(parent);validate(parent);original=json.loads((parent/'episode-config.json').read_text())
-    root=BASE/f'runs/evaluation_episode_{episode:06d}_quality_20261103_v1'
+    root=BASE/f'runs/evaluation_episode_{episode:06d}_quality_20261103_v2'
     if (root/'research/quality-source-completed.json').exists():validate(root);return root
     proof_path=root/'research/own-geometry-provenance.json';progress_path=root/'research/quality-source-progress.json'
     if proof_path.exists() and progress_path.exists():
@@ -129,14 +137,22 @@ def prepare(parent,episode):
             image=cv2.cvtColor(cv2.resize(cv2.imread(str(rec/f'frames/{frame:06d}.png')),(512,384)),cv2.COLOR_BGR2RGB)
             ranked.append((cost,int(frame),(pose,mask,depth,valid,image)))
         ranked.sort(key=lambda row:row[0]);fit=ranked[::2][:8];held=ranked[1::2][:8];candidate=old;accepted=False;error=None;before=None;after=None
+        trials=[];chosen_profile=None
         if len(fit)>=2 and held:
-            try:
-                proposed=fuse(old,[r[2] for r in fit],intr);new_renderer=MeshSilhouette(proposed.vertices,proposed.faces,intr)
-                before=float(np.mean([r[0] for r in held]));after=float(np.mean([image_cost(new_renderer,*r[2][:4])[0] for r in held]))
-                if after<before-.005:candidate=proposed;accepted=True
-                else:
-                    path=root/f'research/fusion-rejected-{name}.glb';proposed.export(path)
-            except Exception as failure:error=str(failure)
+            before=float(np.mean([r[0] for r in held]));best_cost=before
+            profiles=[dict(prior_weight=.2,trunc_voxels=3.,smooth_sigma=.55,boundary_band=0),
+                dict(prior_weight=.5,trunc_voxels=2.,smooth_sigma=.35,boundary_band=1),
+                dict(prior_weight=.05,trunc_voxels=1.5,smooth_sigma=.35,boundary_band=1)]
+            for index,profile in enumerate(profiles):
+                try:
+                    proposed=fuse(old,[r[2] for r in fit],intr,**profile);new_renderer=MeshSilhouette(proposed.vertices,proposed.faces,intr)
+                    cost=float(np.mean([image_cost(new_renderer,*r[2][:4])[0] for r in held]))
+                    trials.append(dict(profile=profile,validation_cost=cost,watertight=bool(proposed.is_watertight)))
+                    if cost<before-.005 and (cost<best_cost or (proposed.is_watertight and not candidate.is_watertight and cost<=best_cost+.002)):
+                        candidate=proposed;accepted=True;best_cost=cost;after=cost;chosen_profile=profile
+                    else:proposed.export(root/f'research/fusion-rejected-{name}-{index}.glb')
+                except Exception as failure:trials.append(dict(profile=profile,error=str(failure)))
+            if not accepted:error='; '.join(t['error'] for t in trials if t.get('error')) or None
         assets=rec/'mesh_priors'
         for suffix in ['ply','glb','obj']:candidate.export(assets/f'{name}.{suffix}')
         suffixes=collision_assets(root,name,candidate)
@@ -146,7 +162,8 @@ def prepare(parent,episode):
         for _,frame,_ in ranked:
             for relative in [f'masks/{slot}/{frame:06d}.png',f'depth_foundation_stereo/{frame:06d}.png',f'frames/{frame:06d}.png']:
                 path=(source/relative).resolve();row['inputs'][str(path)]=digest(path)
-        summary[name]=dict(multiview_geometry_selected=accepted,fit_frames=[r[1] for r in fit],validation_frames=[r[1] for r in held],before_source_cost=before,after_source_cost=after,collision_hulls=len(suffixes),fusion_error=error)
+        summary[name]=dict(multiview_geometry_selected=accepted,fit_frames=[r[1] for r in fit],validation_frames=[r[1] for r in held],before_source_cost=before,after_source_cost=after,collision_hulls=len(suffixes),fusion_error=error,
+            selected_fusion_profile=chosen_profile,fusion_trials=trials,unobserved_back_is_a_prior=True)
         save(root/'research/quality-source-progress.json',dict(updated_utc=utc(),objects=summary))
     proof.update(revision='evaluation_rgb_depth_multiview_v4_20261103',builder_sha256=digest(Path(__file__)),updated_utc=utc(),
         old_object_poses_used=True,own_parent_run=str(parent),own_parent_provenance_sha256=digest(parent/'research/own-geometry-provenance.json'),
