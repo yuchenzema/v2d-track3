@@ -718,10 +718,11 @@ def collect():
                             official_policy_rollout=row.get('status','pending'))
             if human_match_loop.get('status')=='quality_improvement_running':
                 quality=read_json(queue_dir/'quality-training-status.json',{})
-                completed=[int(ep) for ep,row in quality.get('episodes',{}).items() if row.get('status')=='completed']
-                selected=[int(ep) for ep,row in quality.get('episodes',{}).items() if row.get('selected')]
+                from quality_progress_counts import counts as quality_counts
+                accounting=quality_counts(quality,read_json(queue_dir/'quality-selection.json',{}))
+                completed=accounting['reviewed'];selected=accounting['selected']
                 pipeline_execution.update(quality_improvement=True,quality_completed=completed,
-                    quality_selected=selected,report=artifact(queue_dir/'quality-training-status.json'))
+                    quality_selected=selected,quality_followups=accounting['followups'],report=artifact(queue_dir/'quality-training-status.json'))
                 for ep,row in quality.get('episodes',{}).items():
                     if ep in own_rows and row.get('run'):
                         own_rows[ep].update(policy_training_steps=recorded_steps(row['run']) or 0,

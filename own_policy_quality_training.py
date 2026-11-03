@@ -20,7 +20,9 @@ def whole_rollout_passed(result,diagnostic):
 def choose_candidate(candidates,baseline_loss):
     supported=[c for c in candidates if whole_rollout_passed(c['result'],c['diagnostic'])
         and c['diagnostic']['source_video_loss']<baseline_loss*.99]
-    return min(supported or candidates,key=lambda c:c['diagnostic']['source_video_loss'])
+    spider=[c for c in candidates if c['result'].get('local_reference_metrics',{}).get('spider_sr_uncentered')==1.
+        and c['diagnostic']['source_video_loss']<baseline_loss*.99]
+    return min(supported or spider or candidates,key=lambda c:c['diagnostic']['source_video_loss'])
 
 
 def run(out,focus):

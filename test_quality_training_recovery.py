@@ -6,6 +6,13 @@ from improvement_common import save
 
 
 class QualityRecoveryTests(unittest.TestCase):
+    def test_spider_success_is_considered_without_relaxing_the_source_image_gate(self):
+        passed=dict(result=dict(local_reference_metrics=dict(spider_sr_uncentered=1.)),diagnostic=dict(source_video_loss=.5))
+        failed=dict(result=dict(local_reference_metrics=dict(spider_sr_uncentered=0.)),diagnostic=dict(source_video_loss=.49))
+        self.assertIs(quality.choose_candidate([failed,passed],.8),passed)
+        passed['diagnostic']['source_video_loss']=.8
+        self.assertIs(quality.choose_candidate([failed,passed],.8),failed)
+
     def test_resumed_maximum_budget_is_evaluated_and_advances_without_extending_again(self):
         with tempfile.TemporaryDirectory() as folder:
             base=Path(folder);out=base/'queue';out.mkdir();old=base/'old';old.mkdir();parent=base/'source';parent.mkdir()
