@@ -651,7 +651,7 @@ def collect():
         experimental_job=human_match_loop.get('active_optimization') or {}
         if str(human_match_loop.get('status','')).startswith('submission_'):
             hero=human_match_loop.get('phase','Official submission replay and packaging. Strict completion unchanged.')
-        elif human_match_loop.get('status')=='fast_submission_running':
+        elif human_match_loop.get('status') in {'fast_submission_running','quality_improvement_running'}:
             from evaluation20_terminal import recorded_steps
             count=recorded_steps(experimental_job['run']) if experimental_job.get('run') else 0
             label=f"Evaluation {experimental_job['episode']:06d}: " if experimental_job.get('episode') is not None else ''
