@@ -716,6 +716,19 @@ def collect():
                     if ep in own_rows and row.get('run'):
                         own_rows[ep].update(policy_training_steps=recorded_steps(row['run']) or 0,
                             official_policy_rollout=row.get('status','pending'))
+            if human_match_loop.get('status')=='quality_improvement_running':
+                quality=read_json(queue_dir/'quality-training-status.json',{})
+                completed=[int(ep) for ep,row in quality.get('episodes',{}).items() if row.get('status')=='completed']
+                selected=[int(ep) for ep,row in quality.get('episodes',{}).items() if row.get('selected')]
+                pipeline_execution.update(quality_improvement=True,quality_completed=completed,
+                    quality_selected=selected,report=artifact(queue_dir/'quality-training-status.json'))
+                for ep,row in quality.get('episodes',{}).items():
+                    if ep in own_rows and row.get('run'):
+                        own_rows[ep].update(policy_training_steps=recorded_steps(row['run']) or 0,
+                            official_policy_rollout=('quality candidate validated; '+('selected' if row.get('selected') else 'original retained'))
+                                if row.get('status')=='completed' else row.get('status','pending'))
+                if current_run and str(human_match_loop.get('current_episode')) in own_rows:
+                    own_rows[str(human_match_loop['current_episode'])]['policy_training_steps']=recorded_steps(current_run) or 0
         from kaggle_progress import current_scores,latest_comparison
         kaggle=current_scores(BATCH)
         comparison=latest_comparison(BATCH)

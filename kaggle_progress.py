@@ -68,6 +68,10 @@ def latest_comparison(batch):
     try:own=json.loads(status.read_text())
     except (OSError,ValueError):own={}
     if own.get('receipt') and Path(own['receipt']).is_file():
+        try:policy=json.loads((batch/'focused_episodes_20261028/quality-improvement-policy.json').read_text())
+        except (OSError,ValueError):policy={}
+        if policy.get('baseline_receipt') and Path(policy['baseline_receipt']).is_file():
+            return dict(compare_receipts(policy['baseline_receipt'],own['receipt']),label='Quality candidate versus valid own-geometry baseline')
         return dict(compare_receipts(baseline,own['receipt']),label='Own reconstruction cohort; invalid baseline is not comparable')
     candidates=[('Mesh precision',batch/'mesh_precision_candidate_20261102/mesh-precision.kaggle-receipt.json'),
                 ('Episode 19 policy',batch/'policy_motion_candidate_20261102/policy-motion.kaggle-receipt.json'),

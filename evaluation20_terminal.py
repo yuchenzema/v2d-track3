@@ -197,6 +197,16 @@ def snapshot(out):
         if row.get('run'):
             count=recorded_steps(row['run'])
             if count:own_history[str(ep)]=count
+    quality=read(out/'quality-training-status.json') if state.get('status')=='quality_improvement_running' else {}
+    if quality:
+        failure=None
+        progress={}
+        for ep,row in quality.get('episodes',{}).items():
+            if row.get('run'):
+                count=recorded_steps(row['run'])
+                if count:own_history[str(ep)]=count
+        current=quality.get('episodes',{}).get(str(active),{})
+        if current.get('status')=='execution_error':failure=current.get('error')
     if state.get('status')=='fast_submission_running':
         stage=state.get('phase') or stage
         progress={}
@@ -218,6 +228,9 @@ def snapshot(out):
                 own_geometry_required=own,
                 submission_ready_episodes=ready,submission_ready_count=len(ready),
                 complete_first=read(out/'own-geometry-policy.json').get('submission_mode')=='complete_first',
+                quality_improvement=bool(quality),
+                quality_completed_count=sum(row.get('status')=='completed' for row in quality.get('episodes',{}).values()),
+                quality_selected_count=sum(bool(row.get('selected')) for row in quality.get('episodes',{}).values()),
                 kaggle_scores=kaggle,
                 kaggle_comparison=comparison,
                 blocking_failure=failure, health=health.get('status'),
@@ -260,6 +273,7 @@ def render(report):
         f"目前 episode={report['active_episode']}；階段={report['stage'] or report['state']}{progress}",
         f"CAD 已審核 {report['inspected']}/20；來源局部檢查通過 {report['source_locally_passed']}/20；嚴格完成 {report['strict_completion_count']}/20",
         (f"優先提交模式：可提交 {report.get('submission_ready_count',0)}/20；不再等待嚴格完成。" if report.get('complete_first') else ''),
+        (f"品質改善：新版完成驗證 {report.get('quality_completed_count',0)}/20；來源影像比較後採用 {report.get('quality_selected_count',0)} 集；Kaggle 成績另計。" if report.get('quality_improvement') else ''),
         (f"新版官方重評 {len(report.get('submission_replay',{}).get('episodes',{}))}/20；狀態={report.get('submission_replay',{}).get('status')}。" if report.get('submission_replay') else ''),
         (('Kaggle：舊提交已由管理端作廢 '+str(report['kaggle_scores']['invalidated'])+'/6，目前無有效成績。' if report['kaggle_scores'].get('invalidated') else 'Kaggle 有效評分 '+str(report['kaggle_scores']['completed'])+'/6：'+', '.join(f"{r['name']}={r['score']:.5f}{r['unit']}" for r in report['kaggle_scores']['metrics'] if r['score'] is not None)) if report.get('kaggle_scores') else ''),
         (f"最新 Kaggle 候選已評分 {report['kaggle_comparison']['completed']}/6：改善 {report['kaggle_comparison']['improved']} 項、持平 {report['kaggle_comparison']['unchanged']} 項、退步 {report['kaggle_comparison']['regressed']} 項；六項全部提升={report['kaggle_comparison']['all_six_strictly_improved']}。" if report.get('kaggle_comparison') else ''),
