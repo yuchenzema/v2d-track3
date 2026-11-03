@@ -32,6 +32,14 @@ It uses 64 parallel environments; the 640,000-step count is across those worlds.
 The evaluation roster is:
 `1,3,5,6,8,10,14,15,16,19,20,25,28,30,32,33,35,36,37,38`.
 
+Latest urgent submission update (2026-11-03): 13 episodes already have real
+own-geometry policies and official recordings. The seven unfinished episodes use
+64,000-step fresh training and measured-depth trimmed ICP source poses. Mesh
+watertightness after simplification is diagnostic; finite coordinates, valid
+positive-area triangles, complete source frames and actual policy inference
+remain required. No completed policy or submitted GLB is replaced. All 20 are
+required by the unmodified official packer before uploading.
+
 ## Repository contents
 
 - Top-level Python files: reconstruction, fitting, training, evaluation,

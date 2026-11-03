@@ -132,7 +132,13 @@ def generic_reconstruction(root,cfg):
             s=s.replace("stereo=cv2.imread(str(REC/f'stereo_valid/{i:06d}.png'),0)>0","stereo=enc>0")
         write('calibrate_table_camera.py',s);run([PY,str(root/'scripts/calibrate_table_camera.py')],root/'logs/calibrate_table_camera.log')
     for b,name in enumerate(names):
-        if (rec/f'object_poses/{name}/{count-1:06d}.json').exists():continue
+        if all((rec/f'object_poses/{name}/{frame:06d}.json').is_file() for frame in range(count)):continue
+        if cfg.get('fast_submission'):
+            from fast_submission_policy import policy
+            if policy().get('pose_estimation_method')=='metric_icp':
+                from fast_metric_source_pose import run as metric_source_pose
+                metric_source_pose(root,cfg,name,b+1)
+                continue
         args=json.loads((PRIOR/'research/pot-poses-command.json').read_text())[1:]
         args=[s.replace(str(PRIOR),str(root)).replace('/masks/1',f'/masks/{b+1}').replace('white_pot',name) for s in args]
         if cfg.get('own_geometry_required'):

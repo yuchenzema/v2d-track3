@@ -15,7 +15,7 @@ def read(path):
 
 
 def execution_inputs():
-    return {name:digest(BASE/name) for name in ['evaluation_experiment_queue.py','execute_human_match_job_20261023.py','own_geometry.py','preserved_release.py','source_instance_prompts.py','training_continuation.py','own_submission_queue.py','fast_submission_policy.py','fast_evaluation_queue.py','fast_policy_execution.py',
+    return {name:digest(BASE/name) for name in ['evaluation_experiment_queue.py','execute_human_match_job_20261023.py','own_geometry.py','preserved_release.py','source_instance_prompts.py','training_continuation.py','own_submission_queue.py','fast_submission_policy.py','fast_evaluation_queue.py','fast_policy_execution.py','fast_metric_source_pose.py','batch_worker.py',
         'rerun_four_episodes_20261023.py','install_source_cad_reference.py',
         'experimental_training_admission.py','source_cad_training_gate.py',
         'fit_full_trajectory_contacts_20261023.py','optimize_native_grasps.py','native_pinch_contacts.py',

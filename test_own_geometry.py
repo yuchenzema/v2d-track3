@@ -2,11 +2,24 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 import numpy as np
 from own_geometry import reconstruct_surface, reject_forbidden_path, validate
 
 
 class OwnGeometryTests(unittest.TestCase):
+    def test_open_simplification_is_diagnostic_only_in_complete_first_mode(self):
+        import trimesh
+        rgb=np.full((80,100,3),180,np.uint8);mask=np.zeros((80,100),bool);mask[20:60,25:75]=True
+        depth=np.full((80,100),.5,np.float32);intr=dict(fx=120.,fy=120.,cx=50.,cy=40.)
+        opened=trimesh.creation.icosphere(subdivisions=1);opened.update_faces(np.arange(len(opened.faces)-1))
+        with patch.object(trimesh.Trimesh,'simplify_quadric_decimation',side_effect=lambda **kwargs:opened.copy()):
+            with self.assertRaisesRegex(ValueError,'finite/topology'):
+                reconstruct_surface(rgb,mask,depth,intr,face_budget=100)
+            mesh,_,proof=reconstruct_surface(rgb,mask,depth,intr,face_budget=100,require_watertight=False)
+        self.assertFalse(proof['watertight']);self.assertFalse(proof['watertight_acceptance_required'])
+        self.assertTrue(np.isfinite(mesh.vertices).all());self.assertGreater(mesh.area,0)
+
     def test_measured_surface_and_projection_survive_closed_completion(self):
         rgb=np.full((80,100,3),180,np.uint8);mask=np.zeros((80,100),bool);mask[20:60,25:75]=True
         depth=np.full((80,100),.5,np.float32);depth[35:37,40:45]=0

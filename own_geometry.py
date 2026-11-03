@@ -29,7 +29,7 @@ def reject_forbidden_path(path):
         raise ValueError('Public object geometry/trajectories are forbidden reconstruction inputs: '+str(path))
 
 
-def reconstruct_surface(rgb, mask, depth, intr, face_budget=3600):
+def reconstruct_surface(rgb, mask, depth, intr, face_budget=3600,require_watertight=True):
     """Build two manifold pixel-grid surfaces joined only along their boundary."""
     height,width=mask.shape
     size=(min(width,320),max(1,round(height*min(width,320)/width)))
@@ -89,13 +89,15 @@ def reconstruct_surface(rgb, mask, depth, intr, face_budget=3600):
         from scipy.spatial import cKDTree
         indices=cKDTree(old.vertices).query(mesh.vertices)[1]
         mesh.visual.vertex_colors=old.visual.vertex_colors[indices]
-    if not mesh.is_watertight or len(mesh.faces)>face_budget or not np.isfinite(mesh.vertices).all():
+    if ((require_watertight and not mesh.is_watertight) or len(mesh.faces)>face_budget
+            or not np.isfinite(mesh.vertices).all() or len(mesh.faces)<4 or not mesh.area>0):
         raise ValueError('Budgeted own reconstruction failed finite/topology checks')
     initial=np.eye(4);initial[:3,3]=center
     return mesh,initial,dict(observed_surface_depth_pixels=int(measured.sum()),
         silhouette_pixels=int(m.sum()),estimated_depth_fraction=1-float(measured.sum()/m.sum()),
         unseen_back_thickness_prior_m=thickness,raw_faces=raw_faces,
-        vertices=len(mesh.vertices),faces=len(mesh.faces),watertight=True,
+        vertices=len(mesh.vertices),faces=len(mesh.faces),watertight=bool(mesh.is_watertight),
+        watertight_acceptance_required=require_watertight,
         hidden_shape_recovered=False)
 
 
@@ -148,7 +150,7 @@ def build(root,cfg):
             rgb=cv2.cvtColor(cv2.imread(str(image)),cv2.COLOR_BGR2RGB)
             encoded=cv2.imread(str(depth),cv2.IMREAD_UNCHANGED)
             z=np.where(encoded>0,65535/np.maximum(encoded.astype(float),1)-1,0)
-            try:mesh,pose,details=reconstruct_surface(rgb,cv2.imread(str(mask),0)>0,z,intr,cfg.get('submission_mesh_face_budget',3600))
+            try:mesh,pose,details=reconstruct_surface(rgb,cv2.imread(str(mask),0)>0,z,intr,cfg.get('submission_mesh_face_budget',3600),require_watertight=not cfg.get('fast_submission',False))
             except ValueError as error:errors.append(dict(frame=frame,error=str(error)));continue
             for suffix in ['ply','glb','obj']:mesh.export(assets/f'{name}.{suffix}')
             create_urdf(assets/f'{name}.urdf',name,mesh)
