@@ -32,8 +32,9 @@ def run(out,focus):
         state.update(status='quality_improvement_running',phase=phase,current_episode=ep,updated_utc=utc(),
             active_optimization=dict(episode=ep,run=str(root),action=phase,fast_submission=True,quality_improvement=True) if root else None)
         save(out/'status.json',state);progress.update(active_episode=ep,stage=phase,updated_utc=utc());save(out/'quality-training-status.json',progress)
-    # Start with large measured drops; continue through every evaluation clip.
-    order=[10,35,36,33,20,19,1,25,15,6,3,8,32,14,28,16,38,5,37,30]
+    # After the largest drop, also train the near-success clips early so
+    # success rates receive attention alongside average trajectory errors.
+    order=[10,37,38,30,16,28,35,36,33,20,19,1,25,15,6,3,8,32,14,5]
     order=[ep for ep in order if ep in focus]
     while True:
         for ep in order:
