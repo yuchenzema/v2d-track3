@@ -143,7 +143,13 @@ def run(out,focus):
                     if round_index==0:extend(root,increment=min(1280000,maximum-actual))
                 chosen=choose_candidate(candidates,base_metrics['source_video_loss'])
                 select_result(root,chosen['result'])
-                selected=chosen['diagnostic']['source_video_loss']<base_metrics['source_video_loss']*.99
+                incumbent=selection['episodes'].get(str(ep),{});incumbent_root=Path(incumbent.get('run',old_root))
+                comparison_loss=base_metrics['source_video_loss']
+                if incumbent_root.resolve()!=root.resolve():
+                    incumbent_result=read(incumbent.get('result_override') or incumbent_root/'research/fast-submission-result.json')
+                    if incumbent_result.get('trajectory'):
+                        comparison_loss=min(comparison_loss,score(incumbent_root,incumbent_result['trajectory'],parent)['source_video_loss'])
+                selected=chosen['diagnostic']['source_video_loss']<comparison_loss*.99
                 if selected:selection['episodes'][str(ep)]=dict(run=str(root))
                 save(out/'quality-selection.json',dict(selection,updated_utc=utc(),quality_stage='geometry_contacts_training',not_kaggle_improvement_claim=True))
                 progress['episodes'][str(ep)]=dict(status='completed',review_revision=2,run=str(root),request=str(request),selected=selected,baseline_source_validation=base_metrics,candidate_source_validation=chosen['diagnostic'])
@@ -174,9 +180,22 @@ def run(out,focus):
             progress['cohort_submitted']=True;save(out/'quality-training-status.json',progress)
             from kaggle_quality_comparison import compare
             comparison=compare(out,policy['baseline_receipt'])
+            while (comparison.get('metrics') and any(not row.get('valid_scored_comparison') for row in comparison['metrics'].values())):
+                if read(BATCH/'user-pause.json').get('status')=='paused_by_user' or read(out/'controller-reload-request.json').get('pending'):return
+                receipt=read(comparison['candidate_receipt'])
+                if any(row.get('state')=='ERROR' for row in receipt.get('submissions',{}).values()):break
+                emit(None,'All 20 policy reviews finished; awaiting the exact submitted Kaggle IDs before choosing follow-ups')
+                subprocess.run(['systemctl','--user','start','--no-block','v2d-track3-kaggle-status.service'],check=True)
+                time.sleep(30);comparison=compare(out,policy['baseline_receipt'])
             if comparison.get('all_six_improved') and len(focus)==20:
                 progress['all_six_metrics_improved']=True;save(out/'quality-training-status.json',progress)
                 state['submission_cohort_completed']=True
+            elif len(focus)==20:
+                from quality_followups import admit
+                admitted=admit(out,focus,progress,policy)
+                if admitted:
+                    emit(None,'Measured source/optimizer follow-ups admitted after all 20 episodes: '+', '.join(map(str,admitted)))
+                    continue
             emit(None,'Kaggle results checked: '+('all six metrics improved' if comparison.get('all_six_improved') else 'remaining metric improvements require another measured round'))
             return
         emit(None,'Retry unresolved quality execution stages; trained checkpoints and valid baseline retained');time.sleep(30)
