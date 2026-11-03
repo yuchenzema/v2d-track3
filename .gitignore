@@ -24,3 +24,5 @@
 *.key
 
 .cache/fast-native/
+
+!quality_requirements.txt

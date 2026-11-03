@@ -1,0 +1,3 @@
+safetensors==0.8.0
+coacd==1.0.14
+scikit-image==0.26.0
