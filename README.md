@@ -40,6 +40,14 @@ positive-area triangles, complete source frames and actual policy inference
 remain required. No completed policy or submitted GLB is replaced. All 20 are
 required by the unmodified official packer before uploading.
 
+Quality improvement (2026-11-03): the submitted baseline is preserved. The same
+serial controller now tests declared wrist calibration and then rebuilds source
+poses, validates multiview RGB/depth geometry, decomposes own collision surfaces,
+fits physical hand contacts, and trains fresh policies for 1.28M steps with one
+bounded continuation. Whole-episode candidates are compared against common source
+images; local proxies are never reported as held-out Kaggle scores. The selected
+20-episode cohort is uploaded automatically and all six exact scores are checked.
+
 ## Repository contents
 
 - Top-level Python files: reconstruction, fitting, training, evaluation,

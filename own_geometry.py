@@ -173,9 +173,14 @@ def validate(root,training_root=None):
     root=Path(root);proof=root/'research/own-geometry-provenance.json'
     if not proof.is_file():raise ValueError('Missing own-reconstruction provenance; public-scan-derived runs are ineligible')
     data=json.loads(proof.read_text())
-    if data.get('revision')!=REVISION:raise ValueError('Unknown own-geometry reconstruction version')
-    if any(data.get(k) is not False for k in ['public_object_meshes_used','public_object_textures_used','public_marker_templates_used','old_object_poses_used']):
+    if data.get('revision') not in [REVISION,'evaluation_rgb_depth_multiview_v4_20261103']:raise ValueError('Unknown own-geometry reconstruction version')
+    if any(data.get(k) is not False for k in ['public_object_meshes_used','public_object_textures_used','public_marker_templates_used']):
         raise ValueError('Forbidden object prior in reconstruction lineage')
+    if data.get('old_object_poses_used') is not False:
+        if not (data.get('revision')=='evaluation_rgb_depth_multiview_v4_20261103' and data.get('historical_scan_based_poses_used') is False):raise ValueError('Forbidden object pose prior')
+        parent=Path(data['own_parent_run'])
+        if parent.resolve()==root.resolve() or digest(parent/'research/own-geometry-provenance.json')!=data['own_parent_provenance_sha256']:raise ValueError('Invalid own reconstruction parent')
+        validate(parent)
     cfg=json.loads((root/'episode-config.json').read_text())
     if cfg.get('dataset_split')!='evaluation' or not cfg.get('own_geometry_required'):
         raise ValueError('Own reconstruction must be bound to the evaluation source')

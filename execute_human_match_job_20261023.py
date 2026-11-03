@@ -92,6 +92,7 @@ def prepare():
                    own_training_continuation_allowed=job.get('own_training_continuation_allowed',False),
                    own_training_maximum_steps=job.get('own_training_maximum_steps',cfg['training_budget']))
     if job.get('fast_submission'):cfg.update(fast_submission=True,official_recorded_only=True)
+    if job.get('quality_training'):cfg['quality_training']=job['quality_training']
     if job.get('actor_transfer'):
         transfer=dict(job['actor_transfer']);seed=root/'transfer_seed/policy.safetensors'
         seed.parent.mkdir(exist_ok=True);shutil.copy2(transfer['source_checkpoint'],seed)

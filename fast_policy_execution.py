@@ -71,10 +71,10 @@ def install_source(root,source):
         fast_source_run=str(source),official_recorded_only=True,post_training_grasp_acceptance_required=False,
         require_nonpenetrating_reference_before_training=False,grasp_search_require_nonpenetrating_initial_pose=False,
         requires_strict_source_match_for_publication=False,requires_no_penetration_for_publication=False,
-        own_training_continuation_allowed=False,strict_completion_granted=False)
+        own_training_continuation_allowed=bool(cfg.get('quality_training')),strict_completion_granted=False)
     trained=any((root/'flash_chord_coherent_actor_transfer').glob('*.safetensors'))
     saved=root/'coherent-training-config.json'
-    cfg['training_world_count']=(json.loads(saved.read_text())['scene']['world_count'] if trained and saved.exists() else 64)
+    cfg['training_world_count']=(json.loads(saved.read_text())['scene']['world_count'] if trained and saved.exists() else cfg.get('quality_training',{}).get('world_count',64))
     save(root/'episode-config.json',cfg)
     validate(root)
     save(root/'research/fast-source-provenance.json',dict(updated_utc=utc(),
@@ -87,16 +87,30 @@ def install_source(root,source):
 def training_script(episode,seed):
     """Use the existing fresh learner with the same zero-assistance source clock."""
     text=(BASE/'fresh_improvement_training.py').read_text()
-    text=text.replace('scene.world_count=1024','scene.world_count=64')
+    worlds=episode.get('training_world_count',64)
+    text=text.replace('scene.world_count=1024',f'scene.world_count={worlds}')
     text=text.replace('training.compute_dtype=bfloat16','training.compute_dtype=float32')
     text=text.replace("'sim.njmax=1536'","'sim.nconmax=2048','sim.njmax=4096'")
     text=text.replace("'reset.seed=43'",f"'reset.seed={seed}'")
-    text=text.replace("'world_count': 1024","'world_count': 64").replace("'seed': 43",f"'seed': {seed}")
+    text=text.replace("'world_count': 1024",f"'world_count': {worlds}").replace("'seed': 43",f"'seed': {seed}")
     text=text.replace("install_training_fingers(native['main'].__wrapped__.__globals__)","install_training_fingers(native['main'].__wrapped__.__globals__,focus=episode.get('training_focus'))")
     # Native supported scene option: contacts remain enabled, but the own mesh
     # uses its single convex hull rather than expensive concavity decomposition.
     text=text.replace("    validated=bool(episode.get('validated_video_pipeline'))",
         "    validated=bool(episode.get('validated_video_pipeline'))\n    if episode.get('fast_submission'):cfg.scene.decompose_objects=False")
+    if episode.get('quality_training'):
+        injection="""    if episode.get('quality_training'):
+        from flash_chord.embodiments.sharpa_hands import SharpaHandsConfig
+        from omegaconf import open_dict
+        profile=episode['quality_training']['control_profile']
+        overrides=dict(SharpaHandsConfig().joint_overrides)
+        overrides[r'wrist_[xyz]$']={**overrides[r'wrist_[xyz]$'], 'kp':profile['kp'],'kd':profile['kd'],'effort_limit':45.}
+        with open_dict(cfg.embodiment.config):cfg.embodiment.config.joint_overrides=overrides
+        cfg.action.wrist_kp=profile['angular_kp']
+        cfg.action.finger_joint_pos_scale=.2
+        cfg.action.finger_joint_pos_clip=.2
+"""
+        text=text.replace('    cfg.curriculum.stages = stages',injection+'    cfg.curriculum.stages = stages')
     text=text.replace("'baseline_inputs_copied_without_pose_or_geometry_edits': True",
         "'baseline_inputs_copied_without_pose_or_geometry_edits': False, 'own_geometry_source': episode.get('fast_source_run'), 'collision_approximation': 'native single convex hull of the reconstructed mesh; real contacts enabled'")
     return text
@@ -107,7 +121,9 @@ def reset_untrained_setup(root,force=False):
     root=Path(root);manifest=root/'coherent-input-checksums.json'
     if not manifest.exists():return False
     config=json.loads((root/'coherent-training-config.json').read_text())
-    if not force and config.get('scene',{}).get('decompose_objects') is False and config['scene'].get('world_count')==64:return False
+    episode=json.loads((root/'episode-config.json').read_text()) if (root/'episode-config.json').exists() else {}
+    expected_worlds=episode.get('quality_training',{}).get('world_count',64)
+    if not force and config.get('scene',{}).get('decompose_objects') is False and config['scene'].get('world_count')==expected_worlds:return False
     folder=root/'flash_chord_coherent_actor_transfer'
     if list(folder.glob('*.safetensors')) or (folder/'TRAINING_COMPLETED').exists():return False
     metrics=folder/'metrics.jsonl'
@@ -183,6 +199,11 @@ def run(root,job,make_container,status):
             status(ep,'Fast submission: '+script)
             docker(['exec',retarget,'/isaac-sim/python.sh','-u',f'/episode/scripts/{script}.py'],root/f'logs/fast-{script}.log')
     sanitize_reference_contacts(root,cfg)
+    if cfg.get('quality_training') and not (root/'coherent-input-checksums.json').exists():
+        status(ep,'Quality improvement: fit hand contacts against the actual concave collision geometry')
+        from quality_contact_reference import fit
+        fit(root,native,retarget)
+        sanitize_reference_contacts(root,cfg)
     script=root/'scripts/train_coherent_actor_transfer.py'
     if not (root/'coherent-input-checksums.json').exists():
         script.write_text(training_script(cfg,20261102+ep+997*job['generation']))
