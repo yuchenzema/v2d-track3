@@ -22,3 +22,5 @@
 **/.ssh/
 *.pem
 *.key
+
+.cache/fast-native/
