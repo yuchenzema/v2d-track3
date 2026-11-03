@@ -106,6 +106,11 @@ def run(out,focus):
                     if result.get('trajectory'):
                         candidates.append(dict(result=result,diagnostic=analyze(result)))
                 for round_index in range(2):
+                    if (read(out/'controller-reload-request.json').get('pending')
+                            or read(BATCH/'user-pause.json').get('status')=='paused_by_user'):
+                        progress['episodes'][str(ep)]['status']='continuation_pending'
+                        emit(ep,'Checkpoint preserved; waiting for the safe serial boundary before continuation',root)
+                        return
                     logfile=out/f"logs/quality-training-{ep:06d}-g{job['generation']:03d}-round{round_index}.log";logfile.parent.mkdir(exist_ok=True)
                     with logfile.open('a') as log:
                         child=subprocess.Popen([str(PY),'-u',str(BASE/'execute_human_match_job_20261023.py'),'--request',str(request)],cwd=BASE,stdout=log,stderr=subprocess.STDOUT)
