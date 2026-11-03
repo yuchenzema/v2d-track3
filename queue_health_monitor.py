@@ -140,6 +140,13 @@ def apply_pending_update(paused, done):
         request=read(path,{})
         if not request.get('pending') or read(BATCH/'user-pause.json',{}).get('status')=='paused_by_user':return False
         if owner_alive(read(BATCH/'episode-slot-owner.json',{})) or native_learners():return False
+        submission=read(OUT/'own-submission-status.json',{})
+        phase=read(OUT/'status.json',{}).get('phase','').lower()
+        if (submission.get('status') in {'packing_and_preflight','uploading'}
+                and any(word in phase for word in ['upload','pack','preflight','submitt'])):
+            # No learner is active during packing, but killing the controller
+            # here could interrupt the six uploads after only some IDs exist.
+            return False
         revisions=request.get('frontend_revisions',{})
         if revisions:
             if any(not str(k).isdigit() or not isinstance(v,str) or not re.fullmatch(r'_[A-Za-z0-9_]{1,80}',v) for k,v in revisions.items()):

@@ -14,6 +14,15 @@ from queue_health_monitor import age, latest_metric, recovery_decision
 
 
 class QueueHealthTests(unittest.TestCase):
+    def test_reload_waits_for_the_existing_six_metric_upload_to_finish(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            (root/'controller-reload-request.json').write_text('{"pending":true}')
+            (root/'status.json').write_text('{"phase":"Upload the complete 20-episode cohort"}')
+            (root/'own-submission-status.json').write_text('{"status":"uploading"}')
+            with patch.object(monitor,'OUT',root),patch.object(monitor,'BATCH',root),patch.object(monitor,'LOCK',root/'lock'),patch.object(monitor,'owner_alive',return_value=False),patch.object(monitor,'native_learners',return_value=[]),patch.object(monitor.subprocess,'run') as restart:
+                self.assertFalse(monitor.apply_pending_update(False,False));restart.assert_not_called()
+
     def test_exhausted_idle_alignment_is_not_healthy_progress(self):
         state=dict(status='source_alignment_repairs_required')
         self.assertIn('No episode worker',monitor.source_alignment_idle_problem(state,False,False))
