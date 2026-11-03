@@ -8,6 +8,12 @@ from batch_native import _docker,docker
 
 def optimizer_script():
     text=(BASE/'optimize_native_grasps.py').read_text()
+    # The penetration-only objective allowed 0.5 mm overlap, while the
+    # supporting-contact acceptance correctly required clearance. Give both
+    # objectives the same positive clearance target; keep acceptance unchanged.
+    allowance='contact_allowance_m=-.0005 if strict_contacts else .0005'
+    assert allowance in text
+    text=text.replace(allowance,'contact_allowance_m=-.0005')
     text=text.replace('results=[];O=',"results=[]\n import re\n for values in names.values():\n  for label,index in list(values.items()):\n   if label:values[re.sub(r'[^a-zA-Z0-9_]', '_', label)]=index\n O=")
     text=text.replace('f"track3_{cfg[\'objects\'][b]}/object"','f"{cfg[\'objects\'][b]}/object"')
     original="  target=tip_positions();active=np.array(c[f'mano_{side}_object_contact_part_ids'])[t]>0"
@@ -50,4 +56,6 @@ def fit(root,native,retarget):
     columns=['fps','object_body_position','object_body_wxyz','object_body_names']
     assert before.select(columns).equals(after.select(columns)),'Contact fitting changed object motion or source clock'
     save(marker,dict(updated_utc=utc(),before_sha256=source_sha,after_sha256=digest(reference),
-        object_motion_and_source_clock_preserved=True,dynamic_policy_grasp_success_not_claimed=True))
+        object_motion_and_source_clock_preserved=True,dynamic_policy_grasp_success_not_claimed=True,
+        optimizer_script_sha256=digest(root/'scripts/quality_optimize_grasps.py'),
+        optimizer_revision='supporting_contact_clearance_v2'))
