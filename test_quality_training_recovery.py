@@ -6,6 +6,21 @@ from improvement_common import save
 
 
 class QualityRecoveryTests(unittest.TestCase):
+    def test_each_adopted_result_uploads_without_the_legacy_batch_or_count_limit(self):
+        policy=dict(automatic_upload=True,upload_each_adopted_result=True)
+        progress=dict(last_uploaded_reviewed_count=8,intermediate_upload_count=20)
+        self.assertTrue(quality.should_upload(policy,progress,8,True,False))
+        self.assertFalse(quality.should_upload(policy,progress,9,False,True))
+        policy['automatic_upload']=False
+        self.assertFalse(quality.should_upload(policy,progress,9,True,True))
+
+    def test_legacy_upload_policy_still_honors_its_interval_and_limit(self):
+        progress=dict(last_uploaded_reviewed_count=1,intermediate_upload_count=0)
+        self.assertFalse(quality.should_upload({},progress,2,True,False))
+        self.assertTrue(quality.should_upload({},progress,5,True,False))
+        progress['intermediate_upload_count']=4
+        self.assertFalse(quality.should_upload({},progress,5,True,True))
+
     def test_spider_success_is_considered_without_relaxing_the_source_image_gate(self):
         passed=dict(result=dict(local_reference_metrics=dict(spider_sr_uncentered=1.)),diagnostic=dict(source_video_loss=.5))
         failed=dict(result=dict(local_reference_metrics=dict(spider_sr_uncentered=0.)),diagnostic=dict(source_video_loss=.49))

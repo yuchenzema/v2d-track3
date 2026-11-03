@@ -25,6 +25,16 @@ def choose_candidate(candidates,baseline_loss):
     return min(supported or spider or candidates,key=lambda c:c['diagnostic']['source_video_loss'])
 
 
+def should_upload(policy,progress,reviewed,selected,decisive):
+    if policy.get('automatic_upload') is False:return False
+    if policy.get('upload_each_adopted_result') and policy.get('automatic_upload') is not False:
+        return selected
+    interval=max(1,int(policy.get('upload_every_reviewed_episodes',4)))
+    milestone=reviewed-progress.get('last_uploaded_reviewed_count',0)>=interval
+    return ((milestone or decisive)
+        and progress.get('intermediate_upload_count',0)<int(policy.get('maximum_intermediate_uploads',4)))
+
+
 def run(out,focus):
     from own_source_quality import prepare as prepare_source
     from source_policy_validation import score
@@ -49,6 +59,13 @@ def run(out,focus):
         state.update(status='quality_improvement_running',phase=phase,current_episode=ep,updated_utc=utc(),
             active_optimization=dict(episode=ep,run=str(root),action=phase,fast_submission=True,quality_improvement=True) if root else None)
         save(out/'status.json',state);progress.update(active_episode=ep,stage=phase,updated_utc=utc());save(out/'quality-training-status.json',progress)
+    if policy.get('upload_each_adopted_result'):
+        # Catch up an adopted result produced before this upload policy was
+        # enabled. The uploader reuses exact cohort receipts without reupload.
+        try:
+            submit(out,focus);progress.pop('submission_error',None)
+        except Exception as error:progress['submission_error']=str(error)
+        save(out/'quality-training-status.json',progress)
     # The first successful rollout improved MP-SR. Bring the measured geometry
     # candidates forward too, then revisit the early imperfect rollouts.
     order=[35,30,16,28,36,33,20,19,1,25,15,6,3,8,32,14,5,10,37,38]
@@ -175,17 +192,16 @@ def run(out,focus):
                 render_review(ep,root)
                 emit(ep,'Full policy and source-image validation completed; selecting whole episodes only',root)
                 reviewed=sum(row.get('status')=='completed' and row.get('review_revision')==2 for row in progress['episodes'].values())
-                interval=max(1,int(policy.get('upload_every_reviewed_episodes',4)))
+                policy=read(out/'quality-improvement-policy.json')
                 geometry=read(source/'research/quality-source-completed.json').get('objects',{})
                 new_geometry=any(row.get('multiview_geometry_selected') for row in geometry.values())
                 baseline_spider=read(old_root/'research/fast-submission-result.json').get('local_reference_metrics',{}).get('spider_sr_uncentered')
                 new_spider=(chosen['result'].get('local_reference_metrics',{}).get('spider_sr_uncentered')==1. and baseline_spider!=1.)
                 decisive=selected and (new_geometry or new_spider or whole_rollout_passed(chosen['result'],chosen['diagnostic']))
                 decisive=decisive and ep not in progress.get('decisive_uploaded_episodes',[])
-                milestone=reviewed-progress.get('last_uploaded_reviewed_count',0)>=interval
                 upload_count=progress.get('intermediate_upload_count',0)
-                if (milestone or decisive) and upload_count<int(policy.get('maximum_intermediate_uploads',4)):
-                    emit(ep,'Upload the complete 20-episode cohort at the quality milestone; remote scoring runs independently',root)
+                if should_upload(policy,progress,reviewed,selected,decisive):
+                    emit(ep,'Upload the complete 20-episode cohort with the newly adopted policy; remote scoring runs independently',root)
                     try:
                         submit(out,focus)
                         if (read(out/'controller-reload-request.json').get('pending')
