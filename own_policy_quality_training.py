@@ -27,7 +27,7 @@ def choose_candidate(candidates,baseline_loss):
 
 def should_upload(policy,progress,reviewed,selected,decisive):
     if policy.get('automatic_upload') is False:return False
-    if policy.get('upload_each_adopted_result') and policy.get('automatic_upload') is not False:
+    if policy.get('upload_each_adopted_result'):
         return selected
     interval=max(1,int(policy.get('upload_every_reviewed_episodes',4)))
     milestone=reviewed-progress.get('last_uploaded_reviewed_count',0)>=interval
@@ -59,7 +59,7 @@ def run(out,focus):
         state.update(status='quality_improvement_running',phase=phase,current_episode=ep,updated_utc=utc(),
             active_optimization=dict(episode=ep,run=str(root),action=phase,fast_submission=True,quality_improvement=True) if root else None)
         save(out/'status.json',state);progress.update(active_episode=ep,stage=phase,updated_utc=utc());save(out/'quality-training-status.json',progress)
-    if policy.get('upload_each_adopted_result'):
+    if policy.get('upload_each_adopted_result') and policy.get('automatic_upload') is not False:
         # Catch up an adopted result produced before this upload policy was
         # enabled. The uploader reuses exact cohort receipts without reupload.
         try:
