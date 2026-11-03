@@ -276,6 +276,7 @@ def render(report):
         (f"品質改善：新版完成驗證 {report.get('quality_completed_count',0)}/20；來源影像比較後採用 {report.get('quality_selected_count',0)} 集；Kaggle 成績另計。" if report.get('quality_improvement') else ''),
         (f"新版官方重評 {len(report.get('submission_replay',{}).get('episodes',{}))}/20；狀態={report.get('submission_replay',{}).get('status')}。" if report.get('submission_replay') else ''),
         (('Kaggle：舊提交已由管理端作廢 '+str(report['kaggle_scores']['invalidated'])+'/6，目前無有效成績。' if report['kaggle_scores'].get('invalidated') else 'Kaggle 有效評分 '+str(report['kaggle_scores']['completed'])+'/6：'+', '.join(f"{r['name']}={r['score']:.5f}{r['unit']}" for r in report['kaggle_scores']['metrics'] if r['score'] is not None)) if report.get('kaggle_scores') else ''),
+        (f"新版 Kaggle 候選評分 {report['kaggle_scores']['pending_candidate'].get('completed',0)}/6；以上保留上一批完整成績。" if report.get('kaggle_scores',{}).get('pending_candidate') else ''),
         (f"最新 Kaggle 候選已評分 {report['kaggle_comparison']['completed']}/6：改善 {report['kaggle_comparison']['improved']} 項、持平 {report['kaggle_comparison']['unchanged']} 項、退步 {report['kaggle_comparison']['regressed']} 項；六項全部提升={report['kaggle_comparison']['all_six_strictly_improved']}。" if report.get('kaggle_comparison') else ''),
         (f"Policy learner 已啟動，steps={report['training_steps'] if report['training_steps'] is not None else '初始化／編譯中，等待首筆回報'}，PID={report['learner_pids']}" if report['learner_pids']
          else f"目前沒有 policy 在訓練；此 run 已記錄訓練 steps={report['training_steps'] or 0}。"),

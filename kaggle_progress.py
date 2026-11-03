@@ -62,16 +62,32 @@ def compare_receipts(baseline,candidate):
                 receipt=str(candidate),counts_as_strict_episode_completion=False)
 
 
+def display_scores(batch,receipt):
+    """Keep one complete cohort visible while a different cohort is scoring."""
+    latest=receipt_scores(receipt)
+    if latest.get('completed')==6:return latest
+    paths=list((Path(batch)/'own_geometry_submissions').glob('*/kaggle-receipt.json'))
+    def produced(path):
+        provenance=path.parent/'cohort-provenance.json'
+        return (provenance if provenance.exists() else path).stat().st_mtime
+    for path in sorted(paths,key=produced,reverse=True):
+        previous=receipt_scores(path)
+        if previous.get('completed')==6:
+            return dict(previous,pending_candidate=latest)
+    return latest
+
+
 def latest_comparison(batch):
     batch=Path(batch);baseline=batch/'official_submission_20261102/original20.kaggle-receipt.json'
     status=batch/'focused_episodes_20261028/own-submission-status.json'
     try:own=json.loads(status.read_text())
     except (OSError,ValueError):own={}
     if own.get('receipt') and Path(own['receipt']).is_file():
+        shown=display_scores(batch,own['receipt']);candidate=shown.get('receipt') or own['receipt']
         try:policy=json.loads((batch/'focused_episodes_20261028/quality-improvement-policy.json').read_text())
         except (OSError,ValueError):policy={}
         if policy.get('baseline_receipt') and Path(policy['baseline_receipt']).is_file():
-            return dict(compare_receipts(policy['baseline_receipt'],own['receipt']),label='Quality candidate versus valid own-geometry baseline')
+            return dict(compare_receipts(policy['baseline_receipt'],candidate),label='Last fully scored quality cohort versus valid own-geometry baseline',pending_candidate=shown.get('pending_candidate'))
         return dict(compare_receipts(baseline,own['receipt']),label='Own reconstruction cohort; invalid baseline is not comparable')
     candidates=[('Mesh precision',batch/'mesh_precision_candidate_20261102/mesh-precision.kaggle-receipt.json'),
                 ('Episode 19 policy',batch/'policy_motion_candidate_20261102/policy-motion.kaggle-receipt.json'),
@@ -85,4 +101,4 @@ def current_scores(batch):
     batch=Path(batch)
     try:status=json.loads((batch/'focused_episodes_20261028/own-submission-status.json').read_text())
     except (OSError,ValueError):status={}
-    return receipt_scores(status.get('receipt') or batch/'official_submission_20261102/original20.kaggle-receipt.json')
+    return display_scores(batch,status.get('receipt') or batch/'official_submission_20261102/original20.kaggle-receipt.json')

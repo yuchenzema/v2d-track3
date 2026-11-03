@@ -2,10 +2,22 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from kaggle_progress import receipt_scores,compare_receipts,METRICS
+from kaggle_progress import receipt_scores,compare_receipts,current_scores,METRICS
 
 
 class KaggleProgressTests(unittest.TestCase):
+    def test_pending_candidate_keeps_one_complete_cohort_visible_without_mixing_scores(self):
+        with tempfile.TemporaryDirectory() as directory:
+            batch=Path(directory);old=batch/'own_geometry_submissions/old/kaggle-receipt.json';new=batch/'own_geometry_submissions/new/kaggle-receipt.json'
+            old.parent.mkdir(parents=True);new.parent.mkdir(parents=True)
+            old.write_text(json.dumps(dict(submissions={k:dict(state='COMPLETE',public_score='0.25',ref=i+1) for i,(k,*_) in enumerate(METRICS)})))
+            new.write_text(json.dumps(dict(submissions={k:dict(state='COMPLETE' if i==0 else 'PENDING',public_score='0.99' if i==0 else None,ref=i+11) for i,(k,*_) in enumerate(METRICS)})))
+            out=batch/'focused_episodes_20261028';out.mkdir();(out/'own-submission-status.json').write_text(json.dumps(dict(receipt=str(new))))
+            scores=current_scores(batch)
+            self.assertEqual(scores['receipt'],str(old));self.assertEqual(scores['completed'],6)
+            self.assertEqual({row['score'] for row in scores['metrics']},{.25})
+            self.assertEqual(scores['pending_candidate']['receipt'],str(new));self.assertEqual(scores['pending_candidate']['completed'],1)
+
     def test_live_administrative_invalidation_overrides_cached_complete_scores(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);path=root/'receipt.json'
