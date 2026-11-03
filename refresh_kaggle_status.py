@@ -47,7 +47,9 @@ def refresh():
     try:upload=json.loads((BATCH/'focused_episodes_20261028/own-submission-status.json').read_text())
     except (OSError,ValueError):upload={}
     active=Path(upload['receipt']) if upload.get('status')=='uploading' and upload.get('receipt') else None
-    for path in (BATCH/'own_geometry_submissions').glob('*/kaggle-receipt.json'):
+    receipts=[*(BATCH/'own_geometry_submissions').glob('*/kaggle-receipt.json'),
+              *(BATCH/'quality_ablations_20261103').glob('*/kaggle-receipt.json')]
+    for path in receipts:
         if path!=active:reconcile_receipt(path,data)
     for key, row in metrics.items():
         submissions = row.get('submissions', [])
