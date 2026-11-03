@@ -42,7 +42,8 @@ def fit(root,native,retarget):
     _docker(['exec',native,'env','CUDA_VISIBLE_DEVICES=','JAX_PLATFORMS=cpu','V2D_GRASP_REFERENCE=track3_coherent_variant',
         'V2D_SOURCE_HAND_SIGMA=8.0','V2D_CONTACT_FIT_OUTPUT=research/quality-grasp-fits.json',
         'python','-u','/episode/scripts/run_geometry_cpu.py','/episode/scripts/quality_optimize_grasps.py'],root/'logs/quality-static-contact-fit.log')
-    shutil.copy2(BASE/'apply_collision_transitions.py',root/'scripts/apply_collision_transitions.py')
+    application=(BASE/'apply_collision_transitions.py').read_text().replace('lo=start;hi=end;localbase=', 'lo=max(0,start-5);hi=min(T-1,end+4);localbase=')
+    (root/'scripts/apply_collision_transitions.py').write_text(application)
     docker(['exec',retarget,'env','V2D_TRANSITION_REFERENCE=track3_coherent_variant','V2D_CONTACT_FIT_OUTPUT=research/quality-grasp-fits.json',
         'V2D_CONTACT_APPLY_OUTPUT=research/quality-contact-applied.json','/isaac-sim/python.sh','-u','/episode/scripts/apply_collision_transitions.py'],root/'logs/quality-apply-contact-fit.log')
     after=pq.ParquetFile(reference).read()

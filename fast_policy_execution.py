@@ -113,6 +113,7 @@ def training_script(episode,seed):
         text=text.replace('    cfg.curriculum.stages = stages',injection+'    cfg.curriculum.stages = stages')
     text=text.replace("'baseline_inputs_copied_without_pose_or_geometry_edits': True",
         "'baseline_inputs_copied_without_pose_or_geometry_edits': False, 'own_geometry_source': episode.get('fast_source_run'), 'collision_approximation': 'native single convex hull of the reconstructed mesh; real contacts enabled'")
+    if episode.get('quality_training'):text=text.replace('native single convex hull of the reconstructed mesh; real contacts enabled','precomputed concave decomposition of own geometry; original actuator limits and real contacts retained')
     return text
 
 
