@@ -188,6 +188,10 @@ def main():
     # Own-geometry scope supersedes historical policy/scan replay requests.
     from own_geometry import required as own_required
     own=own_required(OUT)
+    if own and read(OUT/'quality-improvement-policy.json',{}).get('enabled'):
+        from quality_improvement_queue import run as improve_quality
+        improve_quality(OUT,FOCUS)
+        return
     from fast_submission_policy import enabled as fast_submission_enabled
     if own and fast_submission_enabled(OUT):
         from fast_evaluation_queue import run as complete_first

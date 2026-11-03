@@ -23,7 +23,7 @@ def read(path):
     except (OSError,ValueError):return {}
 
 
-def eligible(root):
+def eligible(root,result_override=None):
     """Recheck evidence for the exact chosen physical rollout and checkpoint."""
     from own_geometry import validate
     root=Path(root);cfg=read(root/'episode-config.json')
@@ -34,7 +34,7 @@ def eligible(root):
     if not (root/'flash_chord_coherent_actor_transfer/TRAINING_COMPLETED').is_file():raise ValueError('Training incomplete')
     from fast_submission_policy import enabled as fast_submission_enabled
     if cfg.get('fast_submission') and fast_submission_enabled():
-        return eligible_fast(root,cfg)
+        return eligible_fast(root,cfg,result_override)
     strict=read(root/'research/strict-human-match.json')
     if not (strict.get('all_frames_checked') is True and strict.get('passes_strict_local_checks') is True
             and strict.get('failed_frame_count')==0 and strict.get('unobservable_frame_count')==0
@@ -66,15 +66,28 @@ def eligible(root):
         meshes={name:str(root/f'reconstruction/mesh_priors/{name}.glb') for name in cfg['objects']})
 
 
-def eligible_fast(root,cfg):
+def eligible_fast(root,cfg,result_override=None):
     """Submission integrity is mandatory; source/contact success is diagnostic."""
     import numpy as np
     from official_policy_suite import verify_trajectory
-    result=read(root/'research/fast-submission-result.json')
+    result_path=Path(result_override) if result_override else root/'research/fast-submission-result.json'
+    result=read(result_path)
     if result.get('status')!='ready_for_submission':raise ValueError('Fast policy rollout is not complete')
     if result.get('public_object_scans_used') is not False:raise ValueError('Unverified reconstruction lineage')
     checkpoint=Path(result['checkpoint']);sha=digest(checkpoint)
     if sha!=result['checkpoint_sha256']:raise ValueError('Trained checkpoint changed')
+    if result_override:
+        from safetensors import safe_open
+        from safetensors.numpy import load_file
+        from own_policy_calibration import weights_digest
+        proof=read(checkpoint.with_suffix('.derivation.json'));parent=Path(proof['parent'])
+        if digest(parent)!=proof['parent_sha256']:raise ValueError('Calibration parent changed')
+        original=read(root/'research/fast-submission-result.json')
+        if proof['parent_sha256']!=original['checkpoint_sha256']:raise ValueError('Calibration must originate from this own-geometry trained policy')
+        if weights_digest(load_file(parent))!=weights_digest(load_file(checkpoint)):raise ValueError('Calibration edited learned weights')
+        with safe_open(checkpoint,framework='numpy') as file:
+            metadata=file.metadata()
+            if int(metadata['user.environment_steps'])!=original['actual_training_steps']:raise ValueError('Calibration falsified training steps')
     suite=read(root/f'evaluation/official/{sha[:16]}/suite.json')
     if suite.get('status')!='official_evaluation_complete' or suite.get('checkpoint_sha256')!=sha:
         raise ValueError('Official policy evaluation is missing or stale')
@@ -100,14 +113,20 @@ def eligible_fast(root,cfg):
         if digest(root/name)!=expected:raise ValueError('Frozen own-policy training input changed')
     return dict(run=str(root),episode=cfg['episode'],checkpoint=str(checkpoint),checkpoint_sha256=sha,
         trajectory=str(trajectory),trajectory_sha256=digest(trajectory),official_report=str(trajectory.with_suffix('.json')),
-        fast_result_sha256=digest(root/'research/fast-submission-result.json'),
+        fast_result_sha256=digest(result_path),
+        **({'result_override':str(result_path)} if result_override else {}),
         quality_acceptance_required=False,strict_completion_granted=False,
         meshes={name:str(root/f'reconstruction/mesh_priors/{name}.glb') for name in cfg['objects']})
 
 
 def collect(focus):
     ready={};blocked={}
+    selection=read(BATCH/'focused_episodes_20261028/quality-selection.json').get('episodes',{})
     for ep in focus:
+        if str(ep) in selection:
+            row=selection[str(ep)]
+            try:ready[str(ep)]=eligible(row['run'],row.get('result_override'));continue
+            except (ValueError,AssertionError,OSError,KeyError) as error:blocked[str(ep)]=[dict(run=row['run'],reason=str(error))];continue
         roots=sorted((BASE/'runs').glob(f'episode_{ep:06d}_newton_human_match_20261023_g*'),reverse=True)
         for root in roots:
             if not read(root/'episode-config.json').get('own_geometry_required'):continue
@@ -168,7 +187,7 @@ def run(out,focus):
         # Recheck the scientific artifacts immediately before the irreversible
         # upload; a newly replaced mesh/checkpoint cannot inherit old checks.
         for item in ready.values():
-            if eligible(item['run'])!=item:raise ValueError('Own cohort changed during preflight')
+            if eligible(item['run'],item.get('result_override'))!=item:raise ValueError('Own cohort changed during preflight')
         if read(BATCH/'user-pause.json').get('status')=='paused_by_user':return False
         subprocess.run(['git','push','origin','HEAD:main'],cwd=BASE,check=True,capture_output=True,text=True)
         status.update(status='uploading',file=str(package),sha256=digest(package));save(out/'own-submission-status.json',status)
