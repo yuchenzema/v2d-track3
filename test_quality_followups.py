@@ -2,10 +2,21 @@ import json,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
 from improvement_common import save
-from quality_followups import admit,improving
+from quality_followups import admit,improving,apply_repair_requests
 
 
 class MeasuredFollowupTests(unittest.TestCase):
+    def test_measured_repair_starts_one_fresh_job_and_keeps_the_previous_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out=Path(directory);root=out/'original';save(root/'episode-config.json',dict(own_geometry_required=True))
+            progress=dict(episodes={'16':dict(status='completed',run=str(root),request='original-job')})
+            save(out/'quality-repair-requests.json',dict(episodes={'16':dict(source_run=str(root),basis='Verified static wrench fit; unchanged frozen reference')}))
+            with patch('own_geometry.validate'):
+                apply_repair_requests(out,progress);apply_repair_requests(out,progress)
+            self.assertEqual(progress['episodes']['16']['status'],'contact_refit_pending')
+            self.assertNotIn('request',progress['episodes']['16']);self.assertEqual(len(progress['followup_history']),1)
+            self.assertEqual(progress['followup_history'][0]['previous']['request'],'original-job')
+
     def test_more_training_requires_measured_progress_without_extra_drops(self):
         old=dict(actual_training_steps=1280000,source_video_loss=1.,rollout_motion=dict(dropped_frames=10))
         new=dict(actual_training_steps=2560000,source_video_loss=.9,rollout_motion=dict(dropped_frames=9))

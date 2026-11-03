@@ -34,6 +34,8 @@ def run(out,focus):
     from fast_policy_execution import evaluate_checkpoint,select_result
     policy=read(out/'quality-improvement-policy.json');baseline=read(policy['baseline_cohort'])['episodes']
     progress=read(out/'quality-training-status.json');progress.setdefault('episodes',{})
+    from quality_followups import apply_repair_requests
+    apply_repair_requests(out,progress)
     selection=read(out/'quality-selection.json');selection.setdefault('episodes',{})
     if not progress.get('baseline_selection_initialized'):
         # The exploratory gain-only cohort was not a six-metric improvement.
