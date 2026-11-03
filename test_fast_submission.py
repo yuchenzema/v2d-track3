@@ -26,7 +26,7 @@ class FastSubmissionTests(unittest.TestCase):
             attempts=dict(recorded=dict(actual_training_steps=640000)))))
         (root/'research/fast-submission-result.json').write_text(json.dumps(dict(status='ready_for_submission',
             checkpoint=str(actor),checkpoint_sha256=sha,trajectory_sha256=digest(trajectory),states_sha256=digest(states),
-            public_object_scans_used=False,frozen_input_manifest_sha256=digest(frozen))))
+            public_object_scans_used=False,actual_training_steps=640000,frozen_input_manifest_sha256=digest(frozen))))
         (root/'research/strict-human-match.json').write_text(json.dumps(dict(passes_strict_local_checks=False,
             failed_frame_count=2,contact_validation_failed=True)))
         return cfg

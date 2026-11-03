@@ -17,6 +17,9 @@ targets=hands.copy();contact_constraints={}
 for gi,g in enumerate(grasps):
  side=['left','right'].index(g['side']);b=g['object'];start,end=g['start'],g['end'];lo=max(0,start-5);hi=min(T-1,end+5)
  verts=meshes[b].vertices;normals=meshes[b].vertex_normals;indices=np.arange(start,end+1)
+ if config.get('quality_training'):
+  from source_grasp_phase import template_frames
+  examples,_=template_frames(grasps,g);indices=np.asarray(examples)
  local=np.einsum('nij,nkj->nki',objects[indices,b,:3,:3].transpose(0,2,1),hands[indices,side]-objects[indices,b,None,:3,3]);typical=np.median(local,axis=0)
  opening=typical[4]-np.mean(typical[[8,12,16,20]],axis=0);opening/=np.linalg.norm(opening)+1e-12
  for j in [4,8,12,16,20]:

@@ -76,7 +76,7 @@ def eligible_fast(root,cfg,result_override=None):
     if result.get('public_object_scans_used') is not False:raise ValueError('Unverified reconstruction lineage')
     checkpoint=Path(result['checkpoint']);sha=digest(checkpoint)
     if sha!=result['checkpoint_sha256']:raise ValueError('Trained checkpoint changed')
-    if result_override:
+    if result_override and result.get('control_calibration'):
         from safetensors import safe_open
         from safetensors.numpy import load_file
         from own_policy_calibration import weights_digest
@@ -88,11 +88,22 @@ def eligible_fast(root,cfg,result_override=None):
         with safe_open(checkpoint,framework='numpy') as file:
             metadata=file.metadata()
             if int(metadata['user.environment_steps'])!=original['actual_training_steps']:raise ValueError('Calibration falsified training steps')
+    elif result_override:
+        # An archived, unmodified trained checkpoint is also a valid complete
+        # policy choice. It must be a real learner output from this run.
+        from safetensors import safe_open
+        if checkpoint.resolve().parent!=(root/'flash_chord_coherent_actor_transfer').resolve():raise ValueError('Whole-checkpoint override is outside the trained policy folder')
+        steps=int(result['actual_training_steps'])
+        if checkpoint.name!=f'policy_{steps}.safetensors':raise ValueError('Whole-checkpoint filename and actual steps differ')
+        with safe_open(checkpoint,framework='numpy') as file:
+            metadata=file.metadata()
+        if int(metadata['user.environment_steps'])!=steps or metadata.get('user.control_calibration_profile_json'):raise ValueError('Whole-checkpoint training provenance differs')
     suite=read(root/f'evaluation/official/{sha[:16]}/suite.json')
     if suite.get('status')!='official_evaluation_complete' or suite.get('checkpoint_sha256')!=sha:
         raise ValueError('Official policy evaluation is missing or stale')
     steps=suite.get('attempts',{}).get('recorded',{}).get('actual_training_steps',0)
     if not isinstance(steps,(int,float)) or steps<=0:raise ValueError('Actual trained policy steps missing')
+    if result['actual_training_steps']!=steps:raise ValueError('Policy result and official replay counters differ')
     trajectory=Path(suite['recorded_trajectory']);states=Path(suite['recorded_body_states'])
     if digest(trajectory)!=result['trajectory_sha256'] or digest(states)!=result['states_sha256']:
         raise ValueError('Official recorded artifacts changed')

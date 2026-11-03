@@ -176,7 +176,9 @@ def run(out,focus):
                 interval=max(1,int(policy.get('upload_every_reviewed_episodes',4)))
                 geometry=read(source/'research/quality-source-completed.json').get('objects',{})
                 new_geometry=any(row.get('multiview_geometry_selected') for row in geometry.values())
-                decisive=selected and (new_geometry or whole_rollout_passed(chosen['result'],chosen['diagnostic']))
+                baseline_spider=read(old_root/'research/fast-submission-result.json').get('local_reference_metrics',{}).get('spider_sr_uncentered')
+                new_spider=(chosen['result'].get('local_reference_metrics',{}).get('spider_sr_uncentered')==1. and baseline_spider!=1.)
+                decisive=selected and (new_geometry or new_spider or whole_rollout_passed(chosen['result'],chosen['diagnostic']))
                 decisive=decisive and ep not in progress.get('decisive_uploaded_episodes',[])
                 milestone=reviewed-progress.get('last_uploaded_reviewed_count',0)>=interval
                 upload_count=progress.get('intermediate_upload_count',0)
