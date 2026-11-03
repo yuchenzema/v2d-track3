@@ -21,6 +21,8 @@ class QualityRecoveryTests(unittest.TestCase):
                  patch.object(quality,'episode_slot',side_effect=lambda *a:contextlib.nullcontext()),\
                  patch('own_source_quality.prepare',return_value=parent),\
                  patch('source_policy_validation.score',return_value=dict(source_video_loss=1.)),\
+                 patch('own_policy_calibration.diagnose',return_value=dict(dropped_frames=1)),\
+                 patch('fast_policy_execution.select_result'),\
                  patch('own_submission_queue.eligible',return_value=dict(checkpoint_sha256='candidate',trajectory='new-rollout')),\
                  patch('own_submission_queue.run') as upload,\
                  patch('continuous_human_match_20261023.next_generation',return_value=1),\
@@ -37,3 +39,19 @@ class QualityRecoveryTests(unittest.TestCase):
             self.assertEqual(progress['episodes']['10']['status'],'completed')
             self.assertFalse(progress['episodes']['10']['selected'])
             self.assertEqual(json.loads((out/'quality-selection.json').read_text())['episodes']['10']['run'],str(old))
+
+    def test_better_sample_mean_does_not_mean_a_drop_free_rollout(self):
+        result=dict(local_reference_metrics=dict(chord_sr=0.))
+        diagnostic=dict(source_video_loss=.1,rollout_motion=dict(dropped_frames=12))
+        self.assertFalse(quality.whole_rollout_passed(result,diagnostic))
+        result['local_reference_metrics']['chord_sr']=1.
+        self.assertFalse(quality.whole_rollout_passed(result,diagnostic))
+        diagnostic['rollout_motion']['dropped_frames']=0
+        self.assertTrue(quality.whole_rollout_passed(result,diagnostic))
+
+    def test_successful_whole_checkpoint_is_retained_over_a_later_dropped_candidate(self):
+        supported=dict(result=dict(checkpoint='whole-model-640k',local_reference_metrics=dict(chord_sr=1.)),
+            diagnostic=dict(source_video_loss=.4,rollout_motion=dict(dropped_frames=0)))
+        dropped=dict(result=dict(checkpoint='whole-model-1280k',local_reference_metrics=dict(chord_sr=0.)),
+            diagnostic=dict(source_video_loss=.38,rollout_motion=dict(dropped_frames=12)))
+        self.assertIs(quality.choose_candidate([supported,dropped],.8),supported)

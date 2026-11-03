@@ -12,6 +12,17 @@ def read(path):
     except (OSError,ValueError):return {}
 
 
+def whole_rollout_passed(result,diagnostic):
+    return (result.get('local_reference_metrics',{}).get('chord_sr')==1.
+        and diagnostic.get('rollout_motion',{}).get('dropped_frames')==0)
+
+
+def choose_candidate(candidates,baseline_loss):
+    supported=[c for c in candidates if whole_rollout_passed(c['result'],c['diagnostic'])
+        and c['diagnostic']['source_video_loss']<baseline_loss*.99]
+    return min(supported or candidates,key=lambda c:c['diagnostic']['source_video_loss'])
+
+
 def run(out,focus):
     from own_source_quality import prepare as prepare_source
     from source_policy_validation import score
@@ -19,6 +30,8 @@ def run(out,focus):
     from continuous_human_match_20261023 import next_generation
     from evaluation_experiment_queue import execution_inputs
     from training_continuation import extend
+    from own_policy_calibration import diagnose
+    from fast_policy_execution import evaluate_checkpoint,select_result
     policy=read(out/'quality-improvement-policy.json');baseline=read(policy['baseline_cohort'])['episodes']
     progress=read(out/'quality-training-status.json');progress.setdefault('episodes',{})
     selection=read(out/'quality-selection.json');selection.setdefault('episodes',{})
@@ -32,16 +45,16 @@ def run(out,focus):
         state.update(status='quality_improvement_running',phase=phase,current_episode=ep,updated_utc=utc(),
             active_optimization=dict(episode=ep,run=str(root),action=phase,fast_submission=True,quality_improvement=True) if root else None)
         save(out/'status.json',state);progress.update(active_episode=ep,stage=phase,updated_utc=utc());save(out/'quality-training-status.json',progress)
-    # After the largest drop, also train the near-success clips early so
-    # success rates receive attention alongside average trajectory errors.
-    order=[10,37,38,30,16,28,35,36,33,20,19,1,25,15,6,3,8,32,14,5]
+    # The first successful rollout improved MP-SR. Bring the measured geometry
+    # candidates forward too, then revisit the early imperfect rollouts.
+    order=[35,30,16,28,36,33,20,19,1,25,15,6,3,8,32,14,5,10,37,38]
     order=[ep for ep in order if ep in focus]
     while True:
         for ep in order:
             if read(BATCH/'user-pause.json').get('status')=='paused_by_user':return
             if read(out/'controller-reload-request.json').get('pending'):return
             entry=progress['episodes'].get(str(ep),{})
-            if entry.get('status')=='completed':continue
+            if entry.get('status')=='completed' and entry.get('review_revision')==2:continue
             try:
                 old=baseline[str(ep)];old_root=Path(old['run']);original_cfg=read(old_root/'episode-config.json');parent=Path(original_cfg['fast_source_run'])
                 source=BASE/f'runs/evaluation_episode_{ep:06d}_quality_20261103_v1'
@@ -68,6 +81,8 @@ def run(out,focus):
                 root=BASE/f"runs/episode_{ep:06d}_newton_human_match_20261023_g{job['generation']:03d}"
                 progress['episodes'][str(ep)]=dict(status='running',run=str(root),request=str(request));emit(ep,'New physical contact fitting and own-geometry policy training',root)
                 candidates=[]
+                def analyze(result):
+                    return dict(score(root,result['trajectory'],parent),rollout_motion=diagnose(result['trajectory']))
                 # A controller restart must retain both real evaluated models.
                 # In particular, do not exhaust the bounded continuation and
                 # then retry the same budget assertion forever.
@@ -77,7 +92,7 @@ def run(out,focus):
                         if key not in result:continue
                         assert digest(Path(result[key]))==result[hash_key],f'Archived quality artifact changed: {archive}'
                     if result.get('trajectory'):
-                        candidates.append(dict(result=result,diagnostic=score(root,result['trajectory'],parent)))
+                        candidates.append(dict(result=result,diagnostic=analyze(result)))
                 for round_index in range(2):
                     logfile=out/f"logs/quality-training-{ep:06d}-g{job['generation']:03d}-round{round_index}.log";logfile.parent.mkdir(exist_ok=True)
                     with logfile.open('a') as log:
@@ -85,24 +100,55 @@ def run(out,focus):
                         while child.poll() is None:
                             emit(ep,read(root/'research/rebuild-status.json').get('phase','Quality policy training/evaluation'),root);time.sleep(10)
                         if child.returncode:raise RuntimeError(f'Quality episode {ep} failed; {logfile}')
-                    candidate=eligible(root);metrics=score(root,candidate['trajectory'],parent);result=read(root/'research/fast-submission-result.json')
+                    candidate=eligible(root);result=read(root/'research/fast-submission-result.json');latest_result=result
+                    metrics=analyze(result)
                     archive=root/f"research/quality-trained-candidates/{candidate['checkpoint_sha256'][:16]}.json";save(archive,result)
                     candidates.append(dict(result=result,diagnostic=metrics))
+                    # Compare actual whole-model recordings at the saved
+                    # checkpoints. A later model need not be the best model.
+                    known={c['result']['checkpoint_sha256'] for c in candidates}
+                    checkpoints=sorted((root/'flash_chord_coherent_actor_transfer').glob('policy_*.safetensors'),key=lambda p:int(p.stem.split('_')[-1]))
+                    for checkpoint in checkpoints:
+                        if digest(checkpoint) in known:continue
+                        emit(ep,'Replay saved whole-policy checkpoints and inspect every source-video frame',root)
+                        with episode_slot(root,ep):alternate=evaluate_checkpoint(root,checkpoint,read(root/'episode-config.json')['native_container'])
+                        candidates.append(dict(result=alternate,diagnostic=analyze(alternate)))
+                        known.add(alternate['checkpoint_sha256'])
                     from quality_optimizer_archive import archive as archive_optimizers
                     archive_optimizers(root)
                     base_metrics=score(old_root,old['trajectory'],parent)
-                    if metrics['source_video_loss']<base_metrics['source_video_loss']*.98:break
-                    actual=result['actual_training_steps']
+                    best=choose_candidate(candidates,base_metrics['source_video_loss'])
+                    if (whole_rollout_passed(best['result'],best['diagnostic'])
+                            and best['diagnostic']['source_video_loss']<base_metrics['source_video_loss']*.98):break
+                    actual=latest_result['actual_training_steps']
                     maximum=read(root/'episode-config.json').get('own_training_maximum_steps',2560000)
                     if actual>=maximum:break
                     if round_index==0:extend(root,increment=min(1280000,maximum-actual))
-                chosen=min(candidates,key=lambda item:item['diagnostic']['source_video_loss'])
-                save(root/'research/fast-submission-result.json',chosen['result'])
+                chosen=choose_candidate(candidates,base_metrics['source_video_loss'])
+                select_result(root,chosen['result'])
                 selected=chosen['diagnostic']['source_video_loss']<base_metrics['source_video_loss']*.99
                 if selected:selection['episodes'][str(ep)]=dict(run=str(root))
                 save(out/'quality-selection.json',dict(selection,updated_utc=utc(),quality_stage='geometry_contacts_training',not_kaggle_improvement_claim=True))
-                progress['episodes'][str(ep)]=dict(status='completed',run=str(root),request=str(request),selected=selected,baseline_source_validation=base_metrics,candidate_source_validation=chosen['diagnostic'])
+                progress['episodes'][str(ep)]=dict(status='completed',review_revision=2,run=str(root),request=str(request),selected=selected,baseline_source_validation=base_metrics,candidate_source_validation=chosen['diagnostic'])
                 emit(ep,'Full policy and source-image validation completed; selecting whole episodes only',root)
+                reviewed=sum(row.get('status')=='completed' and row.get('review_revision')==2 for row in progress['episodes'].values())
+                interval=max(1,int(policy.get('upload_every_reviewed_episodes',4)))
+                geometry=read(source/'research/quality-source-completed.json').get('objects',{})
+                new_geometry=any(row.get('multiview_geometry_selected') for row in geometry.values())
+                decisive=selected and (new_geometry or whole_rollout_passed(chosen['result'],chosen['diagnostic']))
+                decisive=decisive and ep not in progress.get('decisive_uploaded_episodes',[])
+                milestone=reviewed-progress.get('last_uploaded_reviewed_count',0)>=interval
+                upload_count=progress.get('intermediate_upload_count',0)
+                if (milestone or decisive) and upload_count<int(policy.get('maximum_intermediate_uploads',4)):
+                    emit(ep,'Upload the complete 20-episode cohort at the quality milestone; remote scoring runs independently',root)
+                    try:
+                        submit(out,focus)
+                        progress['last_uploaded_reviewed_count']=reviewed;progress.pop('submission_error',None)
+                        progress['intermediate_upload_count']=upload_count+1
+                        if decisive:progress.setdefault('decisive_uploaded_episodes',[]).append(ep)
+                    except Exception as error:
+                        progress['submission_error']=str(error)
+                    save(out/'quality-training-status.json',progress)
             except Exception as error:
                 progress['episodes'].setdefault(str(ep),{}).update(status='execution_error',error=str(error),traceback=traceback.format_exc());emit(ep,'Quality execution needs repair; original valid submission retained')
         if all(progress['episodes'].get(str(ep),{}).get('status')=='completed' for ep in focus):

@@ -180,10 +180,49 @@ def sanitize_reference_contacts(root,cfg):
     return True
 
 
+def evaluate_checkpoint(root,checkpoint,container):
+    """Record one whole trained model with immutable official replay artifacts."""
+    from official_policy_suite import evaluate_candidate,verify_trajectory
+    root=Path(root);cfg=json.loads((root/'episode-config.json').read_text());ep=cfg['episode']
+    checkpoint=Path(checkpoint);suite=evaluate_candidate(root,checkpoint,container)
+    trajectory=Path(suite['recorded_trajectory']);states=Path(suite['recorded_body_states']);sha=digest(checkpoint)
+    provenance=verify_trajectory(trajectory,sha,suite['official_entrypoint_sha256'],1,ep)
+    assert int(provenance['flash_chord.step_count'])==cfg['frames']
+    with np.load(states,allow_pickle=False) as record:
+        assert bool(record['policy_inference']) and str(record['checkpoint_sha256'])==sha
+        assert np.all(record['object_assistance']==0.) and len(record['body_poses'])==cfg['frames']
+    actual=suite['attempts']['recorded']['actual_training_steps'];assert actual>0
+    result=dict(status='ready_for_submission',episode=ep,run=str(root),updated_utc=utc(),
+        checkpoint=str(checkpoint),checkpoint_sha256=sha,actual_training_steps=actual,
+        trajectory=str(trajectory),trajectory_sha256=digest(trajectory),states_sha256=digest(states),
+        complete_source_frame_count=cfg['frames'],public_object_scans_used=False,
+        frozen_input_manifest_sha256=digest(root/'coherent-input-checksums.json'),
+        policy_inference=True,object_assistance=0.,strict_completion_granted=False,
+        quality_warnings=['Strict motion/contact/grasp acceptance was not required under the user complete-first instruction.'],
+        local_reference_metrics=suite['attempts']['recorded']['metrics'],local_metrics_are_not_kaggle_scores=True)
+    archive=root/f'research/quality-trained-candidates/{sha[:16]}.json'
+    if cfg.get('quality_training'):
+        if archive.exists():
+            previous=json.loads(archive.read_text())
+            if all(previous.get(key)==result.get(key) for key in result if key!='updated_utc'):return previous
+        save(archive,result)
+    return result
+
+
+def select_result(root,result):
+    """Point to one complete recording; never splice or edit achieved poses."""
+    root=Path(root);sha=result['checkpoint_sha256']
+    suite=json.loads((root/f'evaluation/official/{sha[:16]}/suite.json').read_text())
+    states=Path(suite['recorded_body_states'])
+    selected=dict(checkpoint=result['checkpoint'],recorded_states=str(states.relative_to(root)),
+        official_recorded_state_sha256=result['states_sha256'],official_trajectory_sha256=result['trajectory_sha256'],source_quality_is_diagnostic=True)
+    save(root/'final-controller-selection.json',dict(selected=selected))
+    save(root/'research/fast-submission-result.json',result)
+
+
 def run(root,job,make_container,status):
     from batch_generic_retarget import install
     from batch_native import docker,_docker,launch_training
-    from official_policy_suite import evaluate_candidate,verify_trajectory
     root=Path(root);cfg=install_source(root,job['fast_source_run']);ep=cfg['episode']
     reset_untrained_setup(root)
     status(ep,'Fast submission: retarget the estimated source once; quality is diagnostic')
@@ -219,27 +258,8 @@ def run(root,job,make_container,status):
     checkpoint=max(policies,key=lambda p:int(p.stem.rsplit('_',1)[1]))
     status(ep,'Fast submission: one official full-source policy rollout, starting at frame zero')
     save(root/'research/improvement-status.json',dict(status='evaluating',episode=ep,updated_utc=utc()))
-    suite=evaluate_candidate(root,checkpoint,native)
-    trajectory=Path(suite['recorded_trajectory']);states=Path(suite['recorded_body_states']);sha=digest(checkpoint)
-    provenance=verify_trajectory(trajectory,sha,suite['official_entrypoint_sha256'],1,ep)
-    assert int(provenance['flash_chord.step_count'])==cfg['frames']
-    with np.load(states,allow_pickle=False) as record:
-        assert bool(record['policy_inference']) and str(record['checkpoint_sha256'])==sha
-        assert np.all(record['object_assistance']==0.) and len(record['body_poses'])==cfg['frames']
-    actual=suite['attempts']['recorded']['actual_training_steps'];assert actual>0
-    selected=dict(checkpoint=str(checkpoint),recorded_states=str(states.relative_to(root)),
-        official_recorded_state_sha256=digest(states),official_trajectory_sha256=digest(trajectory),
-        source_quality_is_diagnostic=True)
-    save(root/'final-controller-selection.json',dict(selected=selected))
-    result=dict(status='ready_for_submission',episode=ep,run=str(root),updated_utc=utc(),
-        checkpoint=str(checkpoint),checkpoint_sha256=sha,actual_training_steps=actual,
-        trajectory=str(trajectory),trajectory_sha256=digest(trajectory),states_sha256=digest(states),
-        complete_source_frame_count=cfg['frames'],public_object_scans_used=False,
-        frozen_input_manifest_sha256=digest(root/'coherent-input-checksums.json'),
-        policy_inference=True,object_assistance=0.,strict_completion_granted=False,
-        quality_warnings=['Strict motion/contact/grasp acceptance was not required under the user complete-first instruction.'],
-        local_reference_metrics=suite['attempts']['recorded']['metrics'],local_metrics_are_not_kaggle_scores=True)
-    save(root/'research/fast-submission-result.json',result)
+    result=evaluate_checkpoint(root,checkpoint,native)
+    select_result(root,result)
     save(root/'research/improvement-status.json',dict(result,status='completed_for_submission'))
     status(ep,'Fast submission: trained policy and official trajectory ready; strict completion not claimed')
     return result

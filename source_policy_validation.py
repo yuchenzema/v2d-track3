@@ -11,7 +11,8 @@ def score(root,trajectory,source):
     root,source=Path(root),Path(source);cfg=json.loads((root/'episode-config.json').read_text());rec=source/'reconstruction'
     intr=json.loads((rec/'camera_intrinsics.json').read_text());camera=np.load(rec/'scene_motion_physical.npz')['camera_to_world']
     table=pq.read_table(trajectory).to_pandas();scores=[];ious=[];depths=[]
-    frames=np.linspace(0,cfg['frames']-1,min(40,cfg['frames']),dtype=int)
+    # A sampled mean can miss a release/drop near the end of a clip.
+    frames=np.arange(cfg['frames'])
     for slot,name in enumerate(cfg['objects']):
         mesh=trimesh.load(root/f'reconstruction/mesh_priors/{name}.ply',force='mesh',process=False);renderer=MeshSilhouette(mesh.vertices,mesh.faces,intr)
         rows=table[table.object_id==slot].sort_values('step')
@@ -24,4 +25,6 @@ def score(root,trajectory,source):
             mask,depth,valid=observation(rec,slot+1,int(frame));cost,metrics=image_cost(renderer,pose,mask,depth,valid)
             scores.append(cost);ious.append(metrics['iou']);depths.append(metrics['median_depth_error_m'])
     return dict(source_video_loss=float(np.mean(scores)),mean_source_mask_iou=float(np.mean(ious)),median_source_depth_error_m=float(np.median(depths)),
-        inspected_object_frames=len(scores),strict_episode_completion=False,not_kaggle_score=True)
+        inspected_object_frames=len(scores),source_frame_count=cfg['frames'],all_source_frames_inspected=True,
+        p95_source_video_loss=float(np.quantile(scores,.95)),validation_revision=2,
+        strict_episode_completion=False,not_kaggle_score=True)
