@@ -140,6 +140,7 @@ def run(out,focus):
     from own_geometry import required
     if not required(out):return False
     policy=read(out/'own-geometry-policy.json')
+    defer_scores=read(out/'quality-improvement-policy.json').get('enabled',False)
     if read(BATCH/'user-pause.json').get('status')=='paused_by_user':return False
     if read(out/'controller-reload-request.json').get('pending'):return False
     ready,blocked=collect(focus)
@@ -162,12 +163,12 @@ def run(out,focus):
             # must never automatically consume quota by retrying the upload.
             entries=read(receipt).get('submissions',{})
             pending=any(item.get('state') not in {'COMPLETE','ERROR'} for item in entries.values())
-            if pending:
+            if pending and not defer_scores:
                 status.update(status='waiting_for_scores',receipt=str(receipt));save(out/'own-submission-status.json',status)
                 with (destination/'upload.log').open('a') as log:
                     subprocess.run([str(PY),str(KIT/'submit/v2d_submit.py'),'--track','track_3',
                         '--poll-receipt',str(receipt)],cwd=KIT,stdout=log,stderr=subprocess.STDOUT,check=True)
-            status.update(status='receipt_already_exists',receipt=str(receipt));save(out/'own-submission-status.json',status)
+            status.update(status='uploaded_waiting_for_scores' if pending and defer_scores else 'receipt_already_exists',receipt=str(receipt));save(out/'own-submission-status.json',status)
             return False
         results=destination/'results';meshes=destination/'meshes';results.mkdir(exist_ok=True);meshes.mkdir(exist_ok=True)
         commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=BASE,text=True).strip()
@@ -197,10 +198,12 @@ def run(out,focus):
             if eligible(item['run'],item.get('result_override'))!=item:raise ValueError('Own cohort changed during preflight')
         if read(BATCH/'user-pause.json').get('status')=='paused_by_user':return False
         subprocess.run(['git','push','origin','HEAD:main'],cwd=BASE,check=True,capture_output=True,text=True)
-        status.update(status='uploading',file=str(package),sha256=digest(package));save(out/'own-submission-status.json',status)
+        status.update(status='uploading',file=str(package),sha256=digest(package),receipt=str(receipt));save(out/'own-submission-status.json',status)
         with (destination/'upload.log').open('a') as log:
             subprocess.run([str(PY),str(KIT/'submit/v2d_submit.py'),str(package),'--track','track_3',
                 '-m',DESCRIPTION,
-                '--wait','--receipt',str(receipt)],cwd=KIT,stdout=log,stderr=subprocess.STDOUT,check=True)
-        status.update(status='submitted',receipt=str(receipt),updated_utc=utc());save(out/'own-submission-status.json',status)
+                *([] if defer_scores else ['--wait']),'--receipt',str(receipt)],cwd=KIT,stdout=log,stderr=subprocess.STDOUT,check=True)
+        entries=read(receipt).get('submissions',{})
+        pending=any(item.get('state') not in {'COMPLETE','ERROR'} for item in entries.values())
+        status.update(status='uploaded_waiting_for_scores' if pending else 'submitted',receipt=str(receipt),updated_utc=utc());save(out/'own-submission-status.json',status)
     return False
