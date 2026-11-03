@@ -160,6 +160,13 @@ def run(out,focus):
         if receipt.is_file():
             # Reuse the IDs. Administrative invalidation or processing errors
             # must never automatically consume quota by retrying the upload.
+            entries=read(receipt).get('submissions',{})
+            pending=any(item.get('state') not in {'COMPLETE','ERROR'} for item in entries.values())
+            if pending:
+                status.update(status='waiting_for_scores',receipt=str(receipt));save(out/'own-submission-status.json',status)
+                with (destination/'upload.log').open('a') as log:
+                    subprocess.run([str(PY),str(KIT/'submit/v2d_submit.py'),'--track','track_3',
+                        '--poll-receipt',str(receipt)],cwd=KIT,stdout=log,stderr=subprocess.STDOUT,check=True)
             status.update(status='receipt_already_exists',receipt=str(receipt));save(out/'own-submission-status.json',status)
             return False
         results=destination/'results';meshes=destination/'meshes';results.mkdir(exist_ok=True);meshes.mkdir(exist_ok=True)

@@ -67,6 +67,16 @@ def run(out,focus):
                 root=BASE/f"runs/episode_{ep:06d}_newton_human_match_20261023_g{job['generation']:03d}"
                 progress['episodes'][str(ep)]=dict(status='running',run=str(root),request=str(request));emit(ep,'New physical contact fitting and own-geometry policy training',root)
                 candidates=[]
+                # A controller restart must retain both real evaluated models.
+                # In particular, do not exhaust the bounded continuation and
+                # then retry the same budget assertion forever.
+                for archive in sorted((root/'research/quality-trained-candidates').glob('*.json')):
+                    result=read(archive)
+                    for key,hash_key in [('checkpoint','checkpoint_sha256'),('trajectory','trajectory_sha256'),('states','states_sha256')]:
+                        if key not in result:continue
+                        assert digest(Path(result[key]))==result[hash_key],f'Archived quality artifact changed: {archive}'
+                    if result.get('trajectory'):
+                        candidates.append(dict(result=result,diagnostic=score(root,result['trajectory'],parent)))
                 for round_index in range(2):
                     logfile=out/f"logs/quality-training-{ep:06d}-g{job['generation']:03d}-round{round_index}.log";logfile.parent.mkdir(exist_ok=True)
                     with logfile.open('a') as log:
@@ -81,7 +91,10 @@ def run(out,focus):
                     archive_optimizers(root)
                     base_metrics=score(old_root,old['trajectory'],parent)
                     if metrics['source_video_loss']<base_metrics['source_video_loss']*.98:break
-                    if round_index==0:extend(root,increment=1280000)
+                    actual=result['actual_training_steps']
+                    maximum=read(root/'episode-config.json').get('own_training_maximum_steps',2560000)
+                    if actual>=maximum:break
+                    if round_index==0:extend(root,increment=min(1280000,maximum-actual))
                 chosen=min(candidates,key=lambda item:item['diagnostic']['source_video_loss'])
                 save(root/'research/fast-submission-result.json',chosen['result'])
                 selected=chosen['diagnostic']['source_video_loss']<base_metrics['source_video_loss']*.99
