@@ -200,7 +200,7 @@ def main():
     if controller != 'active' and owned and not paused:
         alerts.append('Queue controller is unavailable; waiting for the existing episode process to exit before recovery.')
     history=state.get('optimization_history',[])
-    source_cad=read(OUT/'source-cad-status.json',{}) if state.get('source_cad_first') else {}
+    source_cad=read(OUT/'source-cad-status.json',{}) if state.get('status') in {'source_cad_alignment','evaluation_frontend'} else {}
     required=state.get('required_episode')
     failures=[]
     for job in reversed(history):
