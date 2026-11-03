@@ -81,7 +81,16 @@ def fuse(mesh,views,intr,*,prior_weight=.2,trunc_voxels=3.,smooth_sigma=.55,boun
     if field.min()>=0 or field.max()<=0:raise ValueError('Multiview depth did not define a signed surface')
     vertices,faces,_,_=marching_cubes(field,level=0,spacing=(pitch,)*3);vertices+=lo
     candidate=trimesh.Trimesh(vertices,faces,process=True);candidate=max(candidate.split(only_watertight=False),key=lambda part:part.area)
-    if len(candidate.faces)>3600:candidate=candidate.simplify_quadric_decimation(face_count=3600)
+    if len(candidate.faces)>3600:
+        original_surface=candidate
+        simplified=candidate.simplify_quadric_decimation(face_count=3600)
+        if boundary_band and not simplified.is_watertight:
+            # Decimation can introduce duplicate/nonmanifold faces even when
+            # marching cubes was closed. Preserve topology over the optional
+            # triangle budget; collision hull count remains independently bound.
+            simplified=original_surface.simplify_quadric_decimation(face_count=3600,aggression=3)
+            if not simplified.is_watertight:simplified=original_surface
+        candidate=simplified
     if len(candidate.faces)<32 or not np.isfinite(candidate.vertices).all() or candidate.area<=0:raise ValueError('Invalid fused surface')
     color_points=np.concatenate(rgb_points) if rgb_points else mesh.vertices;color_values=np.concatenate(rgb_colors) if rgb_colors else mesh.visual.vertex_colors[:,:3]
     candidate.visual.vertex_colors=color_values[cKDTree(color_points).query(candidate.vertices)[1]]
