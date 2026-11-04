@@ -11,8 +11,11 @@ class OwnSubmissionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             out=Path(directory)
             (out/'quality-selection.json').write_text(json.dumps(dict(episodes={'32':dict(run='known-regression')})))
-            (out/'quality-kaggle-selection-overrides.json').write_text(json.dumps(dict(episodes={'32':dict(rejected_run='known-regression',selection=dict(run='measured-better'))})))
-            self.assertEqual(queue.selections(out)['32']['run'],'measured-better')
+            (out/'quality-kaggle-selection-overrides.json').write_text(json.dumps(dict(episodes={'32':dict(rejected_run='known-regression',selection=dict(run='measured-better'),trial_receipt='trial',baseline_receipt='baseline')})))
+            with patch('kaggle_progress.compare_receipts',return_value=dict(all_six_strictly_improved=False)):
+                self.assertEqual(queue.selections(out)['32']['run'],'known-regression')
+            with patch('kaggle_progress.compare_receipts',return_value=dict(all_six_strictly_improved=True)):
+                self.assertEqual(queue.selections(out)['32']['run'],'measured-better')
             (out/'quality-selection.json').write_text(json.dumps(dict(episodes={'32':dict(run='fresh-geometry')})))
             self.assertEqual(queue.selections(out)['32']['run'],'fresh-geometry')
 
@@ -21,10 +24,10 @@ class OwnSubmissionTests(unittest.TestCase):
             batch=Path(directory);out=batch/'focused_episodes_20261028';out.mkdir()
             (out/'own-geometry-policy.json').write_text(json.dumps(dict(enabled=True,automatic_upload_after_full_verification=True)))
             ready={str(ep):dict(run=f'run{ep}') for ep in range(20)}
-            trial=batch/'trials/complete';trial.mkdir(parents=True);receipt=trial/'kaggle-receipt.json'
+            trial=batch/'quality_ablations_20261103/complete';trial.mkdir(parents=True);receipt=trial/'kaggle-receipt.json'
             receipt.write_text(json.dumps(dict(submissions={m:dict(state='COMPLETE',ref=i+1) for i,m in enumerate(['add_auc','spider_sr','maniptrans_sr','rpe_cm','mppe_cm','cd_o_cm'])})))
             (trial/'cohort-provenance.json').write_text(json.dumps(dict(episodes=ready)))
-            (out/'own-submission-status.json').write_text(json.dumps(dict(receipt=str(receipt))))
+            (out/'own-submission-status.json').write_text(json.dumps(dict(receipt=str(batch/'previous.json'))))
             with patch.object(queue,'BATCH',batch),patch.object(queue,'collect',return_value=(ready,{})),patch.object(queue.subprocess,'run') as upload:
                 self.assertFalse(queue.run(out,list(range(20))))
             upload.assert_not_called()

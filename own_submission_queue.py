@@ -58,6 +58,10 @@ def selections(out):
     out=Path(out);selection=read(out/'quality-selection.json').get('episodes',{})
     for ep,row in read(out/'quality-kaggle-selection-overrides.json').get('episodes',{}).items():
         if selection.get(ep,{}).get('run')==row.get('rejected_run'):
+            if not row.get('trial_receipt') or not row.get('baseline_receipt'):continue
+            from kaggle_progress import compare_receipts
+            verified=compare_receipts(row['baseline_receipt'],row['trial_receipt'])
+            if not verified.get('all_six_strictly_improved'):continue
             selection[ep]=row['selection']
     return selection
 
@@ -228,12 +232,13 @@ def run(out,focus):
     import hashlib
     signature=hashlib.sha256(json.dumps(ready,sort_keys=True).encode()).hexdigest()
     destination=BATCH/'own_geometry_submissions'/signature[:16]
-    if previous.get('receipt'):
-        prior=Path(previous['receipt'])
-        metrics={'add_auc','spider_sr','maniptrans_sr','rpe_cm','mppe_cm','cd_o_cm'}
+    trials=list((BATCH/'quality_ablations_20261103').glob('*/kaggle-receipt.json'))
+    receipts=([Path(previous['receipt'])] if previous.get('receipt') else [])+trials
+    metrics={'add_auc','spider_sr','maniptrans_sr','rpe_cm','mppe_cm','cd_o_cm'}
+    for prior in receipts:
         if (prior.is_file() and set(read(prior).get('submissions',{}))==metrics
                 and read(prior.parent/'cohort-provenance.json').get('episodes')==ready):
-            destination=prior.parent
+            destination=prior.parent;break
     destination.mkdir(parents=True,exist_ok=True)
     with (destination/'upload.lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
