@@ -14,6 +14,17 @@ from queue_health_monitor import age, latest_metric, recovery_decision
 
 
 class QueueHealthTests(unittest.TestCase):
+    def test_low_disk_reclaims_only_compiler_cache_and_keeps_existing_controller(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);out=root/'queue';out.mkdir()
+            (out/'status.json').write_text(json.dumps(dict(status='quality_improvement_running',execution_plan={'19':dict(automatic=True)})))
+            disks=[type('Disk',(),dict(free=value))() for value in [5_500_000_000,7_000_000_000]]
+            with patch.object(monitor,'OUT',out),patch.object(monitor,'BATCH',root),patch.object(monitor,'EXPECTED',{19}),patch.object(monitor,'service_state',return_value='active'),patch.object(monitor,'owner_alive',return_value=False),patch.object(monitor,'native_learners',return_value=[]),patch.object(monitor,'available_ram_bytes',return_value=64*1024**3),patch.object(monitor.shutil,'disk_usage',side_effect=disks),patch('storage_cache_maintenance.reclaim',return_value=[dict(container='retired-cache-only')]) as clean,patch.object(monitor.subprocess,'run') as run,contextlib.redirect_stdout(io.StringIO()):
+                monitor.main();run.assert_not_called();clean.assert_called_once_with(out)
+            report=json.loads((out/'health-monitor.json').read_text())
+            self.assertEqual(report['free_disk_gb'],7.)
+            self.assertIn('compiler caches',report['recovery_actions'][0])
+
     def test_reload_waits_for_the_existing_six_metric_upload_to_finish(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)

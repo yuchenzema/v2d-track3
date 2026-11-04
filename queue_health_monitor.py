@@ -193,6 +193,13 @@ def main():
     ram = available_ram_bytes()
     disk = shutil.disk_usage(BASE).free
     alerts = []
+    cache_actions=[]
+    if disk<12_000_000_000 and not paused and not done and not state.get('submission_cohort_completed'):
+        try:
+            from storage_cache_maintenance import reclaim
+            cache_actions=reclaim(OUT)
+            disk=shutil.disk_usage(BASE).free
+        except Exception as error:alerts.append('Compiler cache maintenance failed: '+str(error))
     idle_problem=source_alignment_idle_problem(state,owned,paused)
     if idle_problem:alerts.append(idle_problem)
     if invalid_claims:
@@ -225,7 +232,7 @@ def main():
     public_task,public_problem=public_validation_health(validation,owned,paused)
     if state.get('status')=='public_pipeline_validation' and public_problem:
         alerts.append(public_problem)
-    actions = []
+    actions = [f"Cleared regenerable compiler caches in stopped retired runtime {row['container']}; host artifacts and runtime retained." for row in cache_actions]
     experimental=read(OUT/'experimental-training-status.json',{})
     replay=read(OUT/'submission-replay-status.json',{})
     if replay.get('status')=='blocked':
