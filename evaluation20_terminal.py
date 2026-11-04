@@ -199,7 +199,8 @@ def snapshot(out):
             if count:own_history[str(ep)]=count
     quality=read(out/'quality-training-status.json') if state.get('status')=='quality_improvement_running' else {}
     from quality_progress_counts import counts as quality_counts
-    accounting=quality_counts(quality,read(out/'quality-selection.json'))
+    from own_submission_queue import selections
+    accounting=quality_counts(quality,dict(episodes=selections(out)))
     if quality:
         failure=None
         progress={}

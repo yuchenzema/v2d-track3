@@ -719,7 +719,8 @@ def collect():
             if human_match_loop.get('status')=='quality_improvement_running':
                 quality=read_json(queue_dir/'quality-training-status.json',{})
                 from quality_progress_counts import counts as quality_counts
-                accounting=quality_counts(quality,read_json(queue_dir/'quality-selection.json',{}))
+                from own_submission_queue import selections
+                accounting=quality_counts(quality,dict(episodes=selections(queue_dir)))
                 completed=accounting['reviewed'];selected=accounting['selected']
                 pipeline_execution.update(quality_improvement=True,quality_completed=completed,
                     quality_selected=selected,quality_followups=accounting['followups'],report=artifact(queue_dir/'quality-training-status.json'))

@@ -53,6 +53,15 @@ def attach_failed_upload_recovery(parent_path,recovery_path):
     return sorted(replacements)
 
 
+def selections(out):
+    """Retain a measured whole-episode choice over its known regressing run."""
+    out=Path(out);selection=read(out/'quality-selection.json').get('episodes',{})
+    for ep,row in read(out/'quality-kaggle-selection-overrides.json').get('episodes',{}).items():
+        if selection.get(ep,{}).get('run')==row.get('rejected_run'):
+            selection[ep]=row['selection']
+    return selection
+
+
 def eligible(root,result_override=None):
     """Recheck evidence for the exact chosen physical rollout and checkpoint."""
     from own_geometry import validate
@@ -162,7 +171,7 @@ def eligible_fast(root,cfg,result_override=None):
 
 def collect(focus):
     ready={};blocked={}
-    selection=read(BATCH/'focused_episodes_20261028/quality-selection.json').get('episodes',{})
+    selection=selections(BATCH/'focused_episodes_20261028')
     for ep in focus:
         if str(ep) in selection:
             row=selection[str(ep)]
@@ -195,6 +204,12 @@ def run(out,focus):
     import hashlib
     signature=hashlib.sha256(json.dumps(ready,sort_keys=True).encode()).hexdigest()
     destination=BATCH/'own_geometry_submissions'/signature[:16]
+    if previous.get('receipt'):
+        prior=Path(previous['receipt'])
+        metrics={'add_auc','spider_sr','maniptrans_sr','rpe_cm','mppe_cm','cd_o_cm'}
+        if (prior.is_file() and set(read(prior).get('submissions',{}))==metrics
+                and read(prior.parent/'cohort-provenance.json').get('episodes')==ready):
+            destination=prior.parent
     destination.mkdir(parents=True,exist_ok=True)
     with (destination/'upload.lock').open('a') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
