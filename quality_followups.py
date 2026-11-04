@@ -63,7 +63,7 @@ def admit(out,focus,progress,policy):
         try:target=extend(root,increment=min(1280000,maximum-max(r['actual_training_steps'] for r in records)))
         except Exception:
             cfg['own_training_maximum_steps']=previous_limit;save(root/'episode-config.json',cfg);raise
-        history.append(dict(episode=ep,kind='measured_optimizer_continuation',previous_limit=previous_limit,
+        history.append(dict(episode=ep,kind='measured_optimizer_continuation',previous=dict(row),previous_limit=previous_limit,
             new_limit=maximum,target_steps=target,basis='At least 5% full-source validation improvement with no increase in dropped frames',updated_utc=utc()))
         row.update(status='continuation_pending');admitted.append(ep)
     save(Path(out)/'quality-training-status.json',progress)
