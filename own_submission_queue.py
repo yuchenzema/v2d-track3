@@ -62,6 +62,29 @@ def selections(out):
     return selection
 
 
+def completed_snapshot_before_continuation(root,cfg,result_override=None):
+    """A later budget does not erase an already recorded, completed model."""
+    if not (cfg.get('quality_training') and cfg.get('own_training_continuation_allowed')):return False
+    result=read(result_override or root/'research/fast-submission-result.json')
+    sha=result.get('checkpoint_sha256','');steps=result.get('actual_training_steps',0)
+    archived=read(root/f'research/quality-trained-candidates/{sha[:16]}.json')
+    keys=['checkpoint_sha256','actual_training_steps','trajectory_sha256','states_sha256','frozen_input_manifest_sha256']
+    if not sha or steps<=0 or any(result.get(k)!=archived.get(k) for k in keys):return False
+    from safetensors import safe_open
+    checkpoint=Path(result['checkpoint'])
+    if checkpoint.parent.resolve()!=(root/'flash_chord_coherent_actor_transfer').resolve():return False
+    if checkpoint.name!=f'policy_{steps}.safetensors' or digest(checkpoint)!=sha:return False
+    with safe_open(checkpoint,framework='numpy') as file:
+        if int(file.metadata().get('user.environment_steps',0))!=steps:return False
+    for path in root.glob('research/training-continuation-*.json'):
+        proof=read(path);state=Path(proof.get('from_checkpoint',''))
+        if (proof.get('resume_environment_steps',0)>=steps and proof.get('frozen_input_hashes_verified') is True
+                and proof.get('optimizer_restore_required') is True and state.is_file()
+                and state.parent.resolve()==checkpoint.parent.resolve()
+                and digest(state)==proof.get('from_checkpoint_sha256')):return True
+    return False
+
+
 def eligible(root,result_override=None):
     """Recheck evidence for the exact chosen physical rollout and checkpoint."""
     from own_geometry import validate
@@ -70,7 +93,8 @@ def eligible(root,result_override=None):
     if cfg.get('actor_transfer'):raise ValueError('Historical actor lineage')
     if cfg.get('training_initial_counter')!=0:raise ValueError('Fresh own-geometry training origin unverified')
     validate(root)
-    if not (root/'flash_chord_coherent_actor_transfer/TRAINING_COMPLETED').is_file():raise ValueError('Training incomplete')
+    if not (root/'flash_chord_coherent_actor_transfer/TRAINING_COMPLETED').is_file():
+        if not completed_snapshot_before_continuation(root,cfg,result_override):raise ValueError('Training incomplete')
     from fast_submission_policy import enabled as fast_submission_enabled
     if cfg.get('fast_submission') and fast_submission_enabled():
         return eligible_fast(root,cfg,result_override)
