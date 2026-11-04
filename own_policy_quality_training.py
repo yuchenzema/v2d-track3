@@ -223,7 +223,13 @@ def run(out,focus):
             while (comparison.get('metrics') and any(not row.get('valid_scored_comparison') for row in comparison['metrics'].values())):
                 if read(BATCH/'user-pause.json').get('status')=='paused_by_user' or read(out/'controller-reload-request.json').get('pending'):return
                 receipt=read(comparison['candidate_receipt'])
-                if any(row.get('state')=='ERROR' for row in receipt.get('submissions',{}).values()):break
+                from own_submission_queue import receipt_states
+                scoring=receipt_states(receipt)
+                if scoring['failed']:
+                    progress['submission_error']='Kaggle upload/scoring requires repair: '+', '.join(scoring['failed'])
+                    emit(None,progress['submission_error'])
+                    break
+                if not scoring['pending']:break
                 emit(None,'All 20 policy reviews finished; awaiting the exact submitted Kaggle IDs before choosing follow-ups')
                 subprocess.run(['systemctl','--user','start','--no-block','v2d-track3-kaggle-status.service'],check=True)
                 time.sleep(30);comparison=compare(out,policy['baseline_receipt'])

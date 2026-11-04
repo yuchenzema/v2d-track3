@@ -7,6 +7,28 @@ import own_submission_queue as queue
 
 
 class OwnSubmissionTests(unittest.TestCase):
+    def test_failed_upload_without_id_never_waits_for_scoring(self):
+        result=queue.receipt_states(dict(submissions=dict(
+            spider_sr=dict(state='UPLOAD_FAILED',ref=None),
+            add_auc=dict(state='PENDING',ref=123),
+            cd_o_cm=dict(state='COMPLETE',ref=124))))
+        self.assertEqual(result,dict(failed=['spider_sr'],pending=['add_auc']))
+
+    def test_recovery_keeps_other_metrics_and_never_replaces_an_accepted_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            out=Path(directory);parent=out/'parent.json';recovery=out/'retry.json'
+            original=dict(track='track_3',file=str(out/'cohort.parquet'),submissions=dict(
+                add_auc=dict(slug='auc',ref=11,state='COMPLETE',public_score='.2'),
+                spider_sr=dict(slug='sp',ref=None,state='UPLOAD_FAILED')))
+            retry=dict(track='track_3',file=original['file'],submissions=dict(spider_sr=dict(slug='sp',ref=12,state='PENDING')))
+            parent.write_text(json.dumps(original));recovery.write_text(json.dumps(retry))
+            self.assertEqual(queue.attach_failed_upload_recovery(parent,recovery),['spider_sr'])
+            updated=json.loads(parent.read_text());self.assertEqual(updated['submissions']['add_auc'],original['submissions']['add_auc'])
+            self.assertEqual(queue.attach_failed_upload_recovery(parent,recovery),[])
+            retry['submissions']['spider_sr']['ref']=13;recovery.write_text(json.dumps(retry))
+            with self.assertRaisesRegex(AssertionError,'Existing accepted IDs'):queue.attach_failed_upload_recovery(parent,recovery)
+            self.assertEqual(json.loads(parent.read_text())['submissions']['spider_sr']['ref'],12)
+
     def test_incomplete_twenty_episode_cohort_never_uploads(self):
         with tempfile.TemporaryDirectory() as directory:
             out=Path(directory);(out/'own-geometry-policy.json').write_text(json.dumps(dict(enabled=True,automatic_upload_after_full_verification=True)))

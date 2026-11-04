@@ -23,6 +23,36 @@ def read(path):
     except (OSError,ValueError):return {}
 
 
+def receipt_states(receipt):
+    pending=[];failed=[]
+    for metric,row in receipt.get('submissions',{}).items():
+        if row.get('state') in {'ERROR','UPLOAD_FAILED'} or not row.get('ref'):
+            failed.append(metric)
+        elif row.get('state')!='COMPLETE':pending.append(metric)
+    return dict(pending=pending,failed=failed)
+
+
+def attach_failed_upload_recovery(parent_path,recovery_path):
+    """Attach only newly accepted IDs for a definite failed upload of this file."""
+    parent_path=Path(parent_path);recovery_path=Path(recovery_path)
+    parent=read(parent_path);recovery=read(recovery_path)
+    assert parent['track']==recovery['track'],'Recovery track differs'
+    assert Path(parent['file']).resolve()==Path(recovery['file']).resolve(),'Recovery file differs'
+    replacements={}
+    for metric,row in recovery['submissions'].items():
+        old=parent['submissions'][metric]
+        assert old['slug']==row['slug'],'Recovery competition differs'
+        assert row.get('ref') and row.get('state') not in {'UPLOAD_FAILED','ERROR'},'Recovery was not accepted'
+        if old.get('ref')==row['ref']:continue
+        assert old.get('state')=='UPLOAD_FAILED' and not old.get('ref'),'Existing accepted IDs must be retained'
+        replacements[metric]=dict(row,recovery_receipt=str(recovery_path.resolve()))
+    if replacements:
+        backup=parent_path.with_name(parent_path.stem+'-before-upload-recovery.json')
+        if not backup.exists():save(backup,parent)
+        parent['submissions'].update(replacements);save(parent_path,parent)
+    return sorted(replacements)
+
+
 def eligible(root,result_override=None):
     """Recheck evidence for the exact chosen physical rollout and checkpoint."""
     from own_geometry import validate
@@ -172,14 +202,13 @@ def run(out,focus):
         if receipt.is_file():
             # Reuse the IDs. Administrative invalidation or processing errors
             # must never automatically consume quota by retrying the upload.
-            entries=read(receipt).get('submissions',{})
-            pending=any(item.get('state') not in {'COMPLETE','ERROR'} for item in entries.values())
+            states=receipt_states(read(receipt));pending=bool(states['pending'])
             if pending and not defer_scores:
                 status.update(status='waiting_for_scores',receipt=str(receipt));save(out/'own-submission-status.json',status)
                 with (destination/'upload.log').open('a') as log:
                     subprocess.run([str(PY),str(KIT/'submit/v2d_submit.py'),'--track','track_3',
                         '--poll-receipt',str(receipt)],cwd=KIT,stdout=log,stderr=subprocess.STDOUT,check=True)
-            status.update(status='uploaded_waiting_for_scores' if pending and defer_scores else 'receipt_already_exists',receipt=str(receipt));save(out/'own-submission-status.json',status)
+            status.update(status='partial_upload_failed' if states['failed'] else 'uploaded_waiting_for_scores' if pending and defer_scores else 'receipt_already_exists',failed_metrics=states['failed'],receipt=str(receipt));save(out/'own-submission-status.json',status)
             return False
         results=destination/'results';meshes=destination/'meshes';results.mkdir(exist_ok=True);meshes.mkdir(exist_ok=True)
         commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=BASE,text=True).strip()
